@@ -50,6 +50,8 @@ function EnrichmentColumnHeader({
   tableId: string;
 }) {
   const [isRunning, setIsRunning] = useState(false);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   const { data: status } = useQuery({
     queryKey: ["enrich-status", tableId, column.id],
@@ -60,29 +62,68 @@ function EnrichmentColumnHeader({
 
   const running = status?.running ?? 0;
   const completed = status?.completed ?? 0;
+  const errors = status?.errors ?? 0;
   const total = status?.total ?? 0;
   const isFinished = isRunning && total > 0 && running === 0 && completed >= total;
+
+  // Tick elapsed timer while running
+  useEffect(() => {
+    if (!isRunning || isFinished) return;
+    const interval = setInterval(() => {
+      setElapsed(startTime ? Math.floor((Date.now() - startTime) / 1000) : 0);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRunning, isFinished, startTime]);
+
+  // Reset when finished
+  useEffect(() => {
+    if (isFinished) {
+      setTimeout(() => {
+        setIsRunning(false);
+        setStartTime(null);
+        setElapsed(0);
+      }, 4000);
+    }
+  }, [isFinished]);
 
   const handleRun = async () => {
     try {
       setIsRunning(true);
+      setStartTime(Date.now());
+      setElapsed(0);
       await api.enrichments.trigger(tableId, column.id);
     } catch {
       setIsRunning(false);
+      setStartTime(null);
     }
   };
 
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
   const typeLabel = column.type === "agent" ? "AI" : "⛓";
 
+  const progressLabel = (() => {
+    if (!isRunning) return null;
+    if (total === 0) return "Starting...";
+    if (isFinished) {
+      const found = status?.found ?? 0;
+      const notFound = status?.not_found ?? 0;
+      return `Done: ${found} found, ${notFound} not found${errors > 0 ? `, ${errors} error${errors > 1 ? "s" : ""}` : ""}`;
+    }
+    const elapsedStr = elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`;
+    return `${completed}/${total}${errors > 0 ? ` · ${errors} err` : ""} · ${elapsedStr}`;
+  })();
+
   return (
     <div className="flex items-center gap-2 w-full group">
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
         <span className="text-[10px] font-mono text-[#52525b]">{typeLabel}</span>
         <span className="truncate text-xs font-medium text-[#a1a1aa]">{column.name}</span>
-        {isRunning && !isFinished && total > 0 && (
-          <span className="text-[10px] font-mono text-[#06b6d4] whitespace-nowrap">
-            {completed}/{total}
+        {progressLabel && (
+          <span className={cn(
+            "text-[10px] font-mono whitespace-nowrap",
+            isFinished ? "text-emerald-400" : errors > 0 ? "text-amber-400" : "text-[#06b6d4]"
+          )}>
+            {progressLabel}
           </span>
         )}
       </div>
@@ -113,16 +154,28 @@ function EnrichmentColumnHeader({
   );
 }
 
-function RunAllButton({ tableId, enrichmentColumns }: { tableId: string; enrichmentColumns: Column[] }) {
+function RunAllButton({
+  tableId,
+  enrichmentColumns,
+  onRunAll,
+}: {
+  tableId: string;
+  enrichmentColumns: Column[];
+  onRunAll?: () => Promise<void>;
+}) {
   const [running, setRunning] = useState(false);
 
-  const handleRunAll = async () => {
+  const handleClick = async () => {
     if (enrichmentColumns.length === 0) return;
     setRunning(true);
     try {
-      await Promise.all(
-        enrichmentColumns.map((col) => api.enrichments.trigger(tableId, col.id))
-      );
+      if (onRunAll) {
+        await onRunAll();
+      } else {
+        await Promise.all(
+          enrichmentColumns.map((col) => api.enrichments.trigger(tableId, col.id))
+        );
+      }
     } finally {
       setTimeout(() => setRunning(false), 3000);
     }
@@ -132,7 +185,7 @@ function RunAllButton({ tableId, enrichmentColumns }: { tableId: string; enrichm
 
   return (
     <button
-      onClick={handleRunAll}
+      onClick={handleClick}
       disabled={running}
       className={cn(
         "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all",
@@ -437,16 +490,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   );
 
   const enrichmentColumns = columns.filter((c) => ENRICHMENT_TYPES.has(c.type));
-  const regularColumns = columns.filter((c) => !ENRICHMENT_TYPES.has(c.type));
 
-  const handleRunAll = async () => {
+  const handleRunAll = useCallback(async () => {
     if (enrichmentColumns.length === 0) return;
     try {
       await Promise.all(enrichmentColumns.map((col) => api.enrichments.trigger(id, col.id)));
     } catch (err) {
       error(err instanceof Error ? err.message : "Failed to run enrichments");
     }
-  };
+  }, [enrichmentColumns, id, error]);
 
   const handleExportCSV = () => {
     api.csv.exportServer(id);
@@ -500,7 +552,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             )}
             <TableStats rows={rows} columns={columns} />
           </div>
-          <RunAllButton tableId={id} enrichmentColumns={enrichmentColumns} />
+          <RunAllButton tableId={id} enrichmentColumns={enrichmentColumns} onRunAll={handleRunAll} />
         </div>
 
         {/* Action toolbar */}
