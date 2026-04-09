@@ -14,11 +14,21 @@ Write-Host ""
 
 Set-Location $PSScriptRoot
 
+# Kill any existing servers first
+Write-Host "   Cleaning up old processes..." -ForegroundColor DarkGray
+Get-Process -Name "python*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
 # Step 1: Ollama
+$ollamaRunning = $false
 try {
-    $null = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 -ErrorAction Stop
+    $response = curl.exe -s http://localhost:11434/api/tags 2>$null
+    if ($response) { $ollamaRunning = $true }
+} catch {}
+
+if ($ollamaRunning) {
     Write-Host "   [1/3] Ollama already running" -ForegroundColor Green
-} catch {
+} else {
     Write-Host "   [1/3] Starting Ollama on NVIDIA GPU..." -ForegroundColor Yellow
     $env:CUDA_VISIBLE_DEVICES = "0"
     Start-Process -FilePath "ollama" -ArgumentList "serve" -WindowStyle Hidden
@@ -28,39 +38,58 @@ try {
 # Step 2: Backend
 Write-Host "   [2/3] Starting backend API..." -ForegroundColor Yellow
 $env:DATABASE_URL = "sqlite+aiosqlite:///./scrpr.db"
-$backend = Start-Process -FilePath "python" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory "$PSScriptRoot\backend" -WindowStyle Hidden -PassThru
+Start-Process -FilePath "python" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory "$PSScriptRoot\backend" -WindowStyle Hidden
 
 Write-Host "         Waiting for backend" -ForegroundColor DarkGray -NoNewline
+$attempts = 0
 $backendReady = $false
-do {
+while (-not $backendReady -and $attempts -lt 30) {
     Start-Sleep -Seconds 1
     Write-Host "." -ForegroundColor DarkGray -NoNewline
+    $attempts++
     try {
-        $null = Invoke-RestMethod -Uri "http://localhost:8000/health" -TimeoutSec 2 -ErrorAction Stop
-        $backendReady = $true
-    } catch {
-        $backendReady = $false
-    }
-} until ($backendReady)
-Write-Host " Ready!" -ForegroundColor Green
+        $result = curl.exe -s http://localhost:8000/health 2>$null
+        if ($result -match "ok") { $backendReady = $true }
+    } catch {}
+}
+
+if ($backendReady) {
+    Write-Host " Ready!" -ForegroundColor Green
+} else {
+    Write-Host " FAILED!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "   Backend failed to start. Check that Python is installed:" -ForegroundColor Red
+    Write-Host "   cd $PSScriptRoot\backend" -ForegroundColor Yellow
+    Write-Host "   python -m uvicorn app.main:app --port 8000" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "   Press any key to exit..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit 1
+}
 
 # Step 3: Frontend
 Write-Host "   [3/3] Starting frontend..." -ForegroundColor Yellow
-$frontend = Start-Process -FilePath "npm" -ArgumentList "run dev" -WorkingDirectory "$PSScriptRoot\frontend" -WindowStyle Hidden -PassThru
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d `"$PSScriptRoot\frontend`" && npm run dev" -WindowStyle Hidden
 
 Write-Host "         Waiting for frontend" -ForegroundColor DarkGray -NoNewline
+$attempts = 0
 $frontendReady = $false
-do {
+while (-not $frontendReady -and $attempts -lt 30) {
     Start-Sleep -Seconds 1
     Write-Host "." -ForegroundColor DarkGray -NoNewline
+    $attempts++
     try {
-        $null = Invoke-WebRequest -Uri "http://localhost:3000" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-        $frontendReady = $true
-    } catch {
-        $frontendReady = $false
-    }
-} until ($frontendReady)
-Write-Host " Ready!" -ForegroundColor Green
+        $result = curl.exe -s -o NUL -w "%{http_code}" http://localhost:3000 2>$null
+        if ($result -match "200") { $frontendReady = $true }
+    } catch {}
+}
+
+if ($frontendReady) {
+    Write-Host " Ready!" -ForegroundColor Green
+} else {
+    Write-Host " FAILED!" -ForegroundColor Red
+    Write-Host "   Frontend failed. Check: cd frontend && npm run dev" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "   ==========================================" -ForegroundColor DarkCyan
@@ -79,9 +108,7 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 # Cleanup
 Write-Host ""
 Write-Host "   Stopping services..." -ForegroundColor Yellow
-if ($backend -and !$backend.HasExited) { Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue }
-if ($frontend -and !$frontend.HasExited) { Stop-Process -Id $frontend.Id -Force -ErrorAction SilentlyContinue }
-Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
-Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+Get-Process -Name "python*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "node*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Write-Host "   Done. Goodbye!" -ForegroundColor Green
 Start-Sleep -Seconds 1
