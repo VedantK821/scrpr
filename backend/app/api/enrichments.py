@@ -14,6 +14,7 @@ from app.workers.scrape_worker import run_enrichment_job
 from app.api.ws import manager
 from app.services.quota_tracker import QuotaTracker
 from app.scraper.email_verifier import EmailVerifier
+from app.services.email_cache import EmailCacheService
 
 router = APIRouter()
 quota_tracker = QuotaTracker()
@@ -132,4 +133,38 @@ async def verify_email(body: dict):
         "status": result.status,
         "mx_host": result.mx_host,
         "error": result.error,
+    }
+
+
+@router.get("/email-cache/stats")
+async def email_cache_stats():
+    """Get statistics about the local email cache."""
+    cache = EmailCacheService()
+    return await cache.get_stats()
+
+
+@router.get("/email-cache/search")
+async def search_email_cache(q: str):
+    """Search the email cache by email address or domain."""
+    cache = EmailCacheService()
+    results = []
+    if "@" in q:
+        entry = await cache.lookup_by_email(q)
+        if entry:
+            results.append(entry)
+    else:
+        domain_results = await cache.lookup_by_domain(q)
+        results.extend(domain_results)
+    return {
+        "results": [
+            {
+                "email": r.email,
+                "person": r.person_name,
+                "company": r.company,
+                "verified": r.verified,
+                "confidence": r.confidence,
+                "source": r.source,
+            }
+            for r in results
+        ]
     }
