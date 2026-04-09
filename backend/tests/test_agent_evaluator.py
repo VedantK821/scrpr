@@ -10,7 +10,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value='{"relevant": true, "summary": "Page contains info about CEO salary"}')
         evaluator = AgentEvaluator(router=router)
-        result = await evaluator.evaluate("CEO salary", "text content", "http://example.com")
+        result = await evaluator.evaluate("CEO salary", "This is a detailed page about the company leadership team and their executive compensation packages including the CEO salary structure and bonus plans. " * 3, "http://example.com")
         assert isinstance(result, EvalResult)
         assert result.relevant is True
         assert "CEO" in result.summary
@@ -20,7 +20,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value='{"relevant": false, "summary": "Page is about cooking recipes"}')
         evaluator = AgentEvaluator(router=router)
-        result = await evaluator.evaluate("CEO salary", "recipe content", "http://food.com")
+        result = await evaluator.evaluate("CEO salary", "This page contains various cooking recipes for Indian cuisine including biryani and butter chicken with detailed step by step instructions. " * 3, "http://food.com")
         assert result.relevant is False
         assert result.summary
 
@@ -32,10 +32,10 @@ class TestAgentEvaluator:
         long_text = "a" * 10000
         await evaluator.evaluate("test", long_text, "http://example.com")
         call_kwargs = router.complete.call_args.kwargs
-        # Verify that the prompt doesn't contain more than 4000 chars of the page text
+        # Verify that the prompt doesn't contain more than 5000 chars of the page text
         assert long_text not in call_kwargs["prompt"]
-        assert "a" * 4000 in call_kwargs["prompt"]  # truncated version is there
-        assert "a" * 4001 not in call_kwargs["prompt"]
+        assert "a" * 5000 in call_kwargs["prompt"]  # truncated version is there
+        assert "a" * 5001 not in call_kwargs["prompt"]
 
     @pytest.mark.asyncio
     async def test_evaluate_uses_simple_complexity(self):
@@ -43,7 +43,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value='{"relevant": true, "summary": "ok"}')
         evaluator = AgentEvaluator(router=router)
-        await evaluator.evaluate("test", "content", "http://example.com")
+        await evaluator.evaluate("test", "This is a substantial page with enough content to pass the minimum length filter for the evaluator pre-check " * 3, "http://example.com")
         call_kwargs = router.complete.call_args.kwargs
         assert call_kwargs["complexity"] == TaskComplexity.SIMPLE
 
@@ -52,7 +52,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value='{"relevant": true, "summary": "ok"}')
         evaluator = AgentEvaluator(router=router)
-        await evaluator.evaluate("test", "content", "http://specific-url.com/page")
+        await evaluator.evaluate("test", "This is a substantial page with enough content to pass the minimum length filter for the evaluator pre-check " * 3, "http://specific-url.com/page")
         call_kwargs = router.complete.call_args.kwargs
         assert "http://specific-url.com/page" in call_kwargs["prompt"]
 
@@ -61,7 +61,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value='Analysis result: {"relevant": true, "summary": "Found it"}')
         evaluator = AgentEvaluator(router=router)
-        result = await evaluator.evaluate("test", "content", "http://example.com")
+        result = await evaluator.evaluate("test", "This is a substantial page with enough content to pass the minimum length filter for the evaluator pre-check " * 3, "http://example.com")
         assert result.relevant is True
 
     @pytest.mark.asyncio
@@ -69,7 +69,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value="")
         evaluator = AgentEvaluator(router=router)
-        result = await evaluator.evaluate("test", "content", "http://example.com")
+        result = await evaluator.evaluate("test", "This is a substantial page with enough content to pass the minimum length filter for the evaluator pre-check " * 3, "http://example.com")
         assert isinstance(result, EvalResult)
         assert result.relevant is False
 
@@ -78,7 +78,7 @@ class TestAgentEvaluator:
         router = LLMRouter.__new__(LLMRouter)
         router.complete = AsyncMock(return_value="{not valid json}")
         evaluator = AgentEvaluator(router=router)
-        result = await evaluator.evaluate("test", "content", "http://example.com")
+        result = await evaluator.evaluate("test", "This is a substantial page with enough content to pass the minimum length filter for the evaluator pre-check " * 3, "http://example.com")
         assert isinstance(result, EvalResult)
 
 

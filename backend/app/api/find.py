@@ -26,6 +26,47 @@ class FindResponse(BaseModel):
     table_name: str
     entities_found: int
     fields: list[str]
+    stages_completed: list[str] = []
+
+
+@router.post("/find-stream")
+async def find_stream(body: FindRequest):
+    """Stream progress stages while building the list."""
+    from fastapi.responses import StreamingResponse
+    import json as _json
+
+    async def generate():
+        builder = ListBuilder()
+
+        yield _json.dumps({"stage": "thinking", "message": "Analyzing your criteria..."}) + "\n"
+
+        entities = await builder._generate_initial_list(body.criteria, body.target_count, body.entity_type)
+        yield _json.dumps({"stage": "initial_list", "message": f"Generated initial list of {len(entities)} {body.entity_type}", "count": len(entities)}) + "\n"
+
+        if len(entities) < body.target_count:
+            yield _json.dumps({"stage": "searching", "message": "Searching the web for more results..."}) + "\n"
+            queries = await builder._generate_search_queries(body.criteria, body.entity_type)
+            yield _json.dumps({"stage": "scraping", "message": f"Scraping {len(queries)} search result pages..."}) + "\n"
+            web_results = await builder._search_and_scrape(queries)
+            if web_results:
+                yield _json.dumps({"stage": "expanding", "message": "Cross-referencing web data to expand list..."}) + "\n"
+                entities = await builder._expand_list(body.criteria, entities, web_results, body.target_count, body.entity_type)
+
+        yield _json.dumps({"stage": "deduplicating", "message": f"Deduplicating {len(entities)} entries..."}) + "\n"
+
+        # Dedup
+        seen = set()
+        deduped = []
+        for entity in entities:
+            name = (entity.get("name") or entity.get("company") or "").lower().strip()
+            if name and name not in seen:
+                seen.add(name)
+                deduped.append(entity)
+        entities = deduped[:body.target_count]
+
+        yield _json.dumps({"stage": "done", "message": f"Found {len(entities)} {body.entity_type}", "count": len(entities), "entities": entities}) + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 @router.post("/find", response_model=FindResponse)

@@ -7,29 +7,32 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-LIST_BUILDER_SYSTEM_PROMPT = """/no_think You are a list researcher. Given search criteria, compile a comprehensive list of matching entities.
+LIST_BUILDER_SYSTEM_PROMPT = """/no_think You are an expert business researcher building a comprehensive list of entities.
 
-Your job:
-1. First, generate a list from your own knowledge
-2. Then I'll provide web search results to verify and expand the list
+Your job: produce a THOROUGH, ACCURATE list matching the given criteria. Think like a management consultant doing market research.
 
-Return a JSON array of objects. Each object should have relevant fields based on what was requested.
+Quality standards:
+1. ACCURACY: Only include entities you're confident actually exist and match the criteria. No hallucinated companies.
+2. COMPLETENESS: Include the full range — market leaders, mid-tier players, and notable smaller ones.
+3. RICHNESS: For each entity, include ALL fields you know: name, domain/website, industry, headquarters, size estimate, and anything else relevant to the criteria.
+4. DIVERSITY: Cover different sub-categories (e.g., for "IT companies" include pure IT, consulting, product companies, fintech, etc.)
+5. RELEVANCE: Every entry must genuinely match the search criteria. Don't pad with tangentially related entities.
 
-Example for companies: [{"name": "TCS", "domain": "tcs.com", "industry": "IT Services", "headquarters": "Mumbai"}, ...]
-Example for people: [{"name": "John Doe", "title": "Head of Recruitment", "company": "TCS"}, ...]
+For companies: include name, domain, industry, headquarters, approximate_size
+For people: include full_name, title, company, linkedin_url (if known), department
 
-Return ONLY the JSON array. Aim for the exact count requested, or as many as you can find."""
+Return ONLY a JSON array of objects. No explanation, no commentary."""
 
-EXPAND_SYSTEM_PROMPT = """/no_think You are a list researcher expanding an existing list with web data.
+EXPAND_SYSTEM_PROMPT = """/no_think You are expanding a research list with new data found on the web.
 
-Given:
-- The original search criteria
-- An existing partial list
-- Web search results with additional information
+Rules:
+1. Add ONLY entities that genuinely match the original criteria
+2. Do NOT duplicate entries already in the list (check by name, case-insensitive)
+3. Fill in missing fields on existing entries if the web data has them (e.g., add a domain that was missing)
+4. Maintain the same field structure as existing entries
+5. Web data may be noisy — extract only verified entities, not every company name mentioned in passing
 
-Add any NEW entities found in the web results that match the criteria. Do NOT duplicate existing entries.
-Return the COMPLETE list (existing + new) as a JSON array of objects with the same fields.
-Return ONLY the JSON array."""
+Return the COMPLETE merged list (existing + new) as a JSON array. No explanation."""
 
 
 class ListBuilder:

@@ -121,10 +121,10 @@ class TestCombineTexts:
 
     def test_combine_respects_max_length(self):
         extractor = AgentExtractor.__new__(AgentExtractor)
-        # Two texts that exceed 8000 chars total
-        texts = ["a" * 5000, "b" * 5000]
+        # Two texts that exceed 10000 chars total
+        texts = ["a" * 6000, "b" * 6000]
         result = extractor._combine_texts(texts)
-        assert len(result) <= 8000 + 50  # some overhead for source headers
+        assert len(result) <= 10000 + 100  # some overhead for source headers
 
 
 class TestParseExtractionResult:

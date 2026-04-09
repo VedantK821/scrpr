@@ -1,8 +1,43 @@
 import json
 import logging
+import re
 from app.llm.router import LLMRouter, TaskComplexity
 
 logger = logging.getLogger(__name__)
+
+
+GENERATE_SYSTEM_PROMPT = """/no_think You are an expert research strategist generating search queries for a web research agent.
+
+Your job is to produce 5 highly targeted search queries that will surface the EXACT information requested. Think like a professional investigator — not a casual Googler.
+
+Strategy:
+1. Use LinkedIn-specific queries when looking for people (site:linkedin.com/in/ "title" "company")
+2. Use company website queries for org-specific info (site:company.com "team" OR "leadership" OR "about")
+3. Use job board queries for current roles/hiring info (site:linkedin.com/jobs OR site:naukri.com)
+4. Use news/press queries for recent announcements ("company" "appointed" OR "joins as" OR "named")
+5. Use Google operators: "exact phrase", site:, OR, intitle:, -exclude
+
+Each query should take a DIFFERENT angle — don't just rephrase the same thing. Cover:
+- Direct name/title searches
+- Company team/leadership pages
+- LinkedIn profile searches
+- News/appointment announcements
+- Industry-specific directories
+
+Return ONLY a JSON array of 5 query strings. No explanation."""
+
+
+REFINE_SYSTEM_PROMPT = """/no_think You are an expert research strategist refining search queries after initial attempts failed to find the answer.
+
+The previous queries didn't work. You need to try COMPLETELY DIFFERENT approaches:
+- If you searched for a specific title, try related titles (e.g., "campus hiring" → "university relations" → "talent acquisition" → "early careers" → "graduate recruitment")
+- If you searched the company site, try LinkedIn or press releases
+- If you searched in English, try local language terms
+- Try searching for the DEPARTMENT rather than the person (e.g., "TCS campus hiring team")
+- Try competitor companies' similar roles for comparison
+- Try searching for events/conferences where this person might have spoken
+
+Return ONLY a JSON array of 5 query strings. No explanation."""
 
 
 class AgentPlanner:
@@ -10,24 +45,18 @@ class AgentPlanner:
         self.router = router or LLMRouter()
 
     async def generate_queries(self, prompt: str, context: dict) -> list[str]:
-        context_str = json.dumps(context, indent=2) if context else "No additional context provided."
-        system_prompt = (
-            "/no_think You are a search query generator. Given a research prompt and context, "
-            "generate 3-5 targeted Google search queries that will help find the needed information. "
-            "Respond ONLY with a JSON array of strings. Example: [\"query one\", \"query two\"]"
-        )
+        context_str = json.dumps(context, indent=2) if context else "No additional context."
         user_prompt = (
-            f"Research prompt: {prompt}\n\n"
-            f"Context:\n{context_str}\n\n"
-            "Generate 3-5 Google search queries to find this information. "
-            "Return ONLY a JSON array of query strings."
+            f"RESEARCH TASK: {prompt}\n\n"
+            f"KNOWN CONTEXT:\n{context_str}\n\n"
+            f"Generate 5 targeted search queries using different strategies (LinkedIn, company site, news, job boards, direct search)."
         )
         response = await self.router.complete(
             prompt=user_prompt,
             complexity=TaskComplexity.SIMPLE,
-            system_prompt=system_prompt,
-            temperature=0.2,
-            max_tokens=500,
+            system_prompt=GENERATE_SYSTEM_PROMPT,
+            temperature=0.3,
+            max_tokens=600,
         )
         return self._parse_queries(response)
 
@@ -38,40 +67,32 @@ class AgentPlanner:
         previous_queries: list[str],
         findings_so_far: list[str],
     ) -> list[str]:
-        context_str = json.dumps(context, indent=2) if context else "No additional context provided."
-        prev_queries_str = "\n".join(f"- {q}" for q in previous_queries)
-        findings_str = "\n".join(f"- {f}" for f in findings_so_far) if findings_so_far else "No relevant findings yet."
-        system_prompt = (
-            "/no_think You are a search query refiner. Given a research prompt, previous search queries, "
-            "and what was found so far, generate 3-5 new, different search queries to find better results. "
-            "Avoid repeating previous queries. Respond ONLY with a JSON array of strings."
-        )
+        context_str = json.dumps(context, indent=2) if context else "No additional context."
+        prev_str = "\n".join(f"  - {q}" for q in previous_queries)
+        findings_str = "\n".join(f"  - {f}" for f in findings_so_far) if findings_so_far else "  Nothing relevant found yet."
+
         user_prompt = (
-            f"Research prompt: {original_prompt}\n\n"
-            f"Context:\n{context_str}\n\n"
-            f"Previous queries tried:\n{prev_queries_str}\n\n"
-            f"Findings so far:\n{findings_str}\n\n"
-            "Generate 3-5 new, different search queries. "
-            "Return ONLY a JSON array of query strings."
+            f"RESEARCH TASK: {original_prompt}\n\n"
+            f"KNOWN CONTEXT:\n{context_str}\n\n"
+            f"QUERIES ALREADY TRIED (do NOT repeat):\n{prev_str}\n\n"
+            f"WHAT WE FOUND SO FAR:\n{findings_str}\n\n"
+            f"Generate 5 completely different search queries using new angles and strategies."
         )
         response = await self.router.complete(
             prompt=user_prompt,
             complexity=TaskComplexity.SIMPLE,
-            system_prompt=system_prompt,
-            temperature=0.3,
-            max_tokens=500,
+            system_prompt=REFINE_SYSTEM_PROMPT,
+            temperature=0.4,
+            max_tokens=600,
         )
         return self._parse_queries(response)
 
     def _parse_queries(self, response: str) -> list[str]:
         if not response:
             return []
-        # Strip thinking tags (qwen3 and similar models)
-        import re
         text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
         if not text:
             text = response.strip()
-        # Look for a JSON array
         start = text.find("[")
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
@@ -81,7 +102,6 @@ class AgentPlanner:
                     return [str(q).strip() for q in queries if q and str(q).strip()]
             except json.JSONDecodeError:
                 pass
-        # Fallback: split by newlines and clean up
         lines = [
             line.strip().lstrip("-•*123456789. ").strip()
             for line in text.splitlines()

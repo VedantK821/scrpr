@@ -77,6 +77,20 @@ export default function FindPage() {
   const [result, setResult] = useState<FindResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentFinds, setRecentFinds] = useState<RecentFind[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [stages, setStages] = useState<{stage: string; message: string}[]>([]);
+  const [currentStage, setCurrentStage] = useState<string>("");
+
+  const STAGE_ICONS: Record<string, string> = {
+    thinking: "🧠",
+    initial_list: "📋",
+    searching: "🔍",
+    scraping: "🌐",
+    expanding: "📊",
+    deduplicating: "🧹",
+    saving: "💾",
+    done: "✅",
+  };
 
   const findMutation = useMutation({
     mutationFn: () =>
@@ -89,9 +103,10 @@ export default function FindPage() {
     onSuccess: (data) => {
       setResult(data);
       setError(null);
-      // Invalidate tables so new one shows in sidebar
+      setIsSearching(false);
+      setCurrentStage("done");
+      setStages(prev => [...prev, {stage: "done", message: `Found ${data.entities_found} ${entityType}. Table created.`}]);
       qc.invalidateQueries({ queryKey: ["tables"] });
-      // Add to recent finds
       setRecentFinds((prev) => [
         {
           id: crypto.randomUUID(),
@@ -108,6 +123,7 @@ export default function FindPage() {
     onError: (e: Error) => {
       setError(e.message);
       setResult(null);
+      setIsSearching(false);
     },
   });
 
@@ -115,7 +131,34 @@ export default function FindPage() {
     if (!criteria.trim()) return;
     setResult(null);
     setError(null);
-    findMutation.mutate();
+    setStages([]);
+    setIsSearching(true);
+
+    // Simulate stage progression while the actual request runs
+    const stageSequence = [
+      { stage: "thinking", message: "Analyzing your criteria...", delay: 0 },
+      { stage: "initial_list", message: `Generating initial list of ${targetCount} ${entityType} from AI knowledge...`, delay: 3000 },
+      { stage: "searching", message: "Generating search queries for web verification...", delay: 15000 },
+      { stage: "scraping", message: "Scraping top search results for additional data...", delay: 25000 },
+      { stage: "expanding", message: "Cross-referencing web data to expand and verify list...", delay: 60000 },
+      { stage: "deduplicating", message: "Deduplicating and cleaning results...", delay: 90000 },
+      { stage: "saving", message: "Creating table and saving results...", delay: 120000 },
+    ];
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const s of stageSequence) {
+      const t = setTimeout(() => {
+        setCurrentStage(s.stage);
+        setStages(prev => [...prev, { stage: s.stage, message: s.message }]);
+      }, s.delay);
+      timers.push(t);
+    }
+
+    findMutation.mutate(undefined, {
+      onSettled: () => {
+        timers.forEach(clearTimeout);
+      },
+    });
   };
 
   const handleExampleClick = (example: (typeof EXAMPLE_CRITERIA)[number]) => {
@@ -252,8 +295,8 @@ export default function FindPage() {
           {findMutation.isPending ? (
             <span className="flex items-center gap-2.5">
               <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-[#06b6d4]/30 border-t-[#06b6d4] animate-spin" />
-              Researching{" "}
-              <span className="text-[#06b6d4]/70 font-mono text-xs">(this takes 2–3 minutes…)</span>
+              {currentStage ? (STAGE_ICONS[currentStage] || "⏳") + " " : ""}
+              {stages.length > 0 ? stages[stages.length - 1].message : "Starting research..."}
             </span>
           ) : (
             <span className="flex items-center gap-2">
@@ -262,6 +305,24 @@ export default function FindPage() {
             </span>
           )}
         </Button>
+
+        {/* Stage progress log */}
+        {isSearching && stages.length > 0 && (
+          <div className="mt-4 rounded-lg border border-[#27272a] bg-[#09090b] p-3 space-y-1.5 font-mono text-xs">
+            {stages.map((s, i) => (
+              <div key={i} className={cn(
+                "flex items-center gap-2",
+                i === stages.length - 1 ? "text-[#06b6d4]" : "text-[#52525b]"
+              )}>
+                <span>{STAGE_ICONS[s.stage] || "•"}</span>
+                <span>{s.message}</span>
+                {i === stages.length - 1 && currentStage !== "done" && (
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#06b6d4] animate-pulse ml-1" />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Result card */}
