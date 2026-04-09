@@ -16,11 +16,11 @@ const STATUS_CONFIG: Record<CellStatus, StatusConfig> = {
   },
   pending: {
     textClass: "text-[#52525b]",
-    label: "Waiting...",
+    label: "Queued",
   },
   running: {
     textClass: "text-[#06b6d4]",
-    label: "Running",
+    label: "Working...",
   },
   found: {
     dot: "bg-emerald-500",
@@ -66,16 +66,16 @@ export function CellRenderer(params: ICellRendererParams) {
           style={{ animationDuration: "0.9s" }}
         />
         <span className="text-xs font-mono animate-pulse" style={{ animationDuration: "0.9s" }}>
-          Running
+          Working...
         </span>
       </span>
     );
   }
 
-  // Pending state
+  // Pending state — queued, not failed
   if (status === "pending") {
     return (
-      <span className="text-[#3f3f46] text-xs font-mono">Waiting...</span>
+      <span className="text-[#52525b] text-xs font-mono">Queued</span>
     );
   }
 
