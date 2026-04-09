@@ -396,10 +396,19 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
 
   const [step, setStep] = useState<Step>("compose");
 
-  // Compose state
-  const [subjectTemplate, setSubjectTemplate] = useState("Hi /FirstName/, quick question about /Company/");
+  // Compose state — auto-generate from available columns
+  const colNames = columns.map(c => c.name.toLowerCase());
+  const hasContact = colNames.some(n => n.includes("contact") || n.includes("recruiter") || n.includes("manager") || n.includes("hiring"));
+  const contactCol = columns.find(c => c.name.toLowerCase().includes("contact") || c.name.toLowerCase().includes("recruiter") || c.name.toLowerCase().includes("manager") || c.name.toLowerCase().includes("hiring"));
+  const companyCol = columns.find(c => c.name.toLowerCase().includes("company") || c.name.toLowerCase().includes("name"));
+  const contactRef = contactCol ? `/${contactCol.name}/` : "/Name/";
+  const companyRef = companyCol ? `/${companyCol.name}/` : "/Company/";
+
+  const [subjectTemplate, setSubjectTemplate] = useState(
+    `Reaching out re: ${companyRef}`
+  );
   const [bodyTemplate, setBodyTemplate] = useState(
-    "Hi /FirstName/,\n\nI came across /Company/ and was really impressed by what you're building.\n\n[Your pitch here]\n\nWould love to connect — are you open to a quick chat?\n\nBest,\n[Your name]"
+    `Hi ${contactRef},\n\nI came across ${companyRef} and wanted to reach out.\n\n[Your pitch here — describe what you offer and why it matters to them]\n\nWould you be open to a 15-minute chat?\n\nBest,\n[Your name]`
   );
   const [personalizationLevel, setPersonalizationLevel] = useState<PersonalizationLevel>("light");
   const [aiInstructions, setAiInstructions] = useState("");
