@@ -11,6 +11,22 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+function LinkedInDot() {
+  const { data } = useQuery({
+    queryKey: ["linkedin-status"],
+    queryFn: api.linkedin.status,
+    staleTime: 60_000,
+  });
+  const connected = data?.connected ?? false;
+  return (
+    <span
+      className={cn("w-1.5 h-1.5 rounded-full shrink-0", connected ? "bg-emerald-400" : "bg-[#3f3f46]")}
+      style={connected ? { boxShadow: "0 0 5px rgba(52,211,153,0.7)" } : undefined}
+      title={connected ? "LinkedIn: Connected" : "LinkedIn: Not Connected"}
+    />
+  );
+}
+
 function QuotaMini() {
   const { data: quota } = useQuery({
     queryKey: ["quota"],
@@ -201,14 +217,55 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         <div className="px-3">
           <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Quick Actions</p>
           <div className="space-y-0.5">
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left">
+            <Link
+              href="/find"
+              className={cn(
+                "flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] transition-all duration-200 text-left border",
+                pathname === "/find"
+                  ? "bg-[#06b6d4]/10 text-[#06b6d4] border-[#06b6d4]/20"
+                  : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] border-transparent hover:border-[#27272a]"
+              )}
+            >
+              <span className="text-sm">⌕</span>
+              <span>Find</span>
+            </Link>
+            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]">
               <span className="text-sm">⬆</span>
               <span>Import CSV</span>
             </button>
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left">
+            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]">
               <span className="text-sm">◧</span>
               <span>Templates</span>
             </button>
+          </div>
+        </div>
+
+        {/* Gradient Divider */}
+        <div className="mx-3 my-2 gradient-divider" />
+
+        {/* LinkedIn + Settings */}
+        <div className="px-3">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Account</p>
+          <div className="space-y-0.5">
+            <Link
+              href="/settings"
+              className={cn(
+                "flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] transition-all duration-200 text-left border",
+                pathname === "/settings"
+                  ? "bg-[#06b6d4]/10 text-[#06b6d4] border-[#06b6d4]/20"
+                  : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] border-transparent hover:border-[#27272a]"
+              )}
+            >
+              <span className="text-sm">⚙</span>
+              <span className="flex-1">Settings</span>
+            </Link>
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]"
+            >
+              <LinkedInDot />
+              <span className="flex-1">LinkedIn</span>
+            </Link>
           </div>
         </div>
       </div>
