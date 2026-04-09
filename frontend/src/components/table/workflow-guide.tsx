@@ -27,19 +27,22 @@ function detectPhase(columns: Column[], rows: Row[]): Phase {
 
   // Check enrichment cell statuses
   let hasRunning = false;
+  let hasPending = false;
   let hasEmpty = false;
   let hasFound = false;
   for (const row of rows) {
     for (const col of enrichCols) {
       const cell = row.cells.find((c) => c.column_id === col.id);
       if (!cell || cell.status === "empty") hasEmpty = true;
-      else if (cell.status === "running" || cell.status === "pending") hasRunning = true;
+      else if (cell.status === "running") hasRunning = true;
+      else if (cell.status === "pending") hasPending = true;
       else if (cell.status === "found" || cell.status === "not_found" || cell.status === "error" || cell.status === "review") hasFound = true;
     }
   }
 
+  // Only show progress bar when a cell is actively running (not just stale pending from a restart)
   if (hasRunning) return "running";
-  if (hasFound && !hasEmpty) return "done";
+  if (hasFound && !hasEmpty && !hasPending) return "done";
   return "ready-to-run";
 }
 
@@ -134,16 +137,18 @@ export function WorkflowGuide({
       title: "Set up enrichment",
       description: "Add columns to automatically find contacts and emails for each row.",
       actions: (
-        <>
+        <div className="w-full space-y-2">
           {onQuickSetup && (
-            <button onClick={onQuickSetup} className="guide-btn guide-btn--green">
-              ⚡ Quick Setup (Contact + Email)
+            <button onClick={onQuickSetup} className="w-full py-3 rounded-lg text-sm font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all text-center">
+              ⚡ Quick Setup — auto-add &quot;Key Contact&quot; + &quot;Email&quot; columns
             </button>
           )}
-          <span className="text-[10px] text-[#52525b]">or</span>
-          <button onClick={() => onOpenEnrichment("agent")} className="guide-btn">🤖 Custom Agent</button>
-          <button onClick={() => onOpenEnrichment("waterfall")} className="guide-btn">⛓ Custom Waterfall</button>
-        </>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-[#52525b]">or add manually:</span>
+            <button onClick={() => onOpenEnrichment("agent")} className="guide-btn">🤖 Custom Agent</button>
+            <button onClick={() => onOpenEnrichment("waterfall")} className="guide-btn">⛓ Custom Waterfall</button>
+          </div>
+        </div>
       ),
     },
     "ready-to-run": {
@@ -151,8 +156,8 @@ export function WorkflowGuide({
       title: "Run enrichment",
       description: "Click Run to find contacts and emails for all rows. Takes a few minutes.",
       actions: (
-        <button onClick={onRunAll} className="guide-btn guide-btn--primary">
-          ▶ Run All Enrichments
+        <button onClick={onRunAll} className="w-full py-3 rounded-lg text-sm font-bold btn-cyan-gradient text-center animate-pulse">
+          ▶ Run All Enrichments — find contacts and emails for {rows.length} row{rows.length !== 1 ? "s" : ""}
         </button>
       ),
     },
@@ -167,7 +172,11 @@ export function WorkflowGuide({
             <span className="text-sm font-semibold text-[#fafafa]">{config.title}</span>
           </div>
           <p className="text-xs text-[#71717a] mb-3">{config.description}</p>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className={cn(
+            phase === "ready-to-run" || phase === "needs-enrichment"
+              ? "w-full"
+              : "flex items-center gap-2 flex-wrap"
+          )}>
             {config.actions}
           </div>
         </div>
