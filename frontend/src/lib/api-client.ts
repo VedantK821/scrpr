@@ -31,6 +31,10 @@ export const api = {
       request<import("@/types").Column>(`/tables/${tableId}/columns`, {
         method: "POST", body: JSON.stringify(data),
       }),
+    update: (tableId: string, colId: string, data: { name?: string; type?: string }) =>
+      request<import("@/types").Column>(`/tables/${tableId}/columns/${colId}`, {
+        method: "PATCH", body: JSON.stringify(data),
+      }),
     delete: (tableId: string, colId: string) =>
       request<void>(`/tables/${tableId}/columns/${colId}`, { method: "DELETE" }),
   },
@@ -74,6 +78,26 @@ export const api = {
     testSend: (to: string, subject: string, body: string) =>
       request<{ success: boolean; error: string }>("/emails/test-send", {
         method: "POST", body: JSON.stringify({ to, subject, body }),
+      }),
+  },
+  linkedin: {
+    status: () => request<import("@/types").LinkedInStatus>("/linkedin/status"),
+    connectCookie: (li_at: string) => request<{ success: boolean }>("/linkedin/connect-cookie", {
+      method: "POST", body: JSON.stringify({ li_at }),
+    }),
+    connectBrowser: () => request<{ success: boolean }>("/linkedin/connect-browser", { method: "POST" }),
+    importBrowser: (browser?: string) => request<{ success: boolean }>("/linkedin/import-browser", {
+      method: "POST", body: JSON.stringify({ browser: browser || "auto" }),
+    }),
+    disconnect: () => request<{ success: boolean }>("/linkedin/disconnect", { method: "POST" }),
+    search: (query: string, maxResults?: number) => request<{ results: unknown[] }>("/linkedin/search", {
+      method: "POST", body: JSON.stringify({ query, max_results: maxResults || 5 }),
+    }),
+  },
+  find: {
+    buildList: (data: { criteria: string; target_count: number; entity_type: string; table_name?: string }) =>
+      request<import("@/types").FindResponse>("/find", {
+        method: "POST", body: JSON.stringify(data),
       }),
   },
   csv: {

@@ -48,3 +48,15 @@ export interface EmailDraft {
   confidence: number | null;
   status: string;
 }
+
+export interface LinkedInStatus {
+  connected: boolean;
+  has_cookie: boolean;
+}
+
+export interface FindResponse {
+  table_id: string;
+  table_name: string;
+  entities_found: number;
+  fields: string[];
+}
