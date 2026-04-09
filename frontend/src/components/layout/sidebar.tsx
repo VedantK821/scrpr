@@ -23,23 +23,36 @@ function QuotaMini() {
   if (entries.length === 0) return null;
 
   return (
-    <div className="px-3 py-3 border-t border-[#27272a] space-y-2">
+    <div className="px-3 py-3 space-y-2" style={{ borderTop: "1px solid transparent", backgroundImage: "linear-gradient(#18181b, #18181b), linear-gradient(to right, transparent, #3f3f46 30%, #3f3f46 70%, transparent)", backgroundOrigin: "border-box", backgroundClip: "padding-box, border-box" }}>
+      <div className="gradient-divider mb-3" />
       <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2">Quota</p>
       {entries.map(([source, info]) => {
         const pct = info.limit > 0 ? (info.used / info.limit) * 100 : 0;
-        const isLow = info.remaining < info.limit * 0.2;
+        const remaining = info.remaining / info.limit;
+        const isLow = remaining < 0.2;
+        const isMid = remaining >= 0.2 && remaining < 0.5;
+        const isHigh = remaining >= 0.5;
+
+        const barColor = isHigh
+          ? "linear-gradient(90deg, #10b981, #34d399)"
+          : isMid
+          ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
+          : "linear-gradient(90deg, #ef4444, #f87171)";
+
+        const textColor = isHigh ? "text-emerald-400" : isMid ? "text-amber-400" : "text-red-400";
+
         return (
           <div key={source} className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-[#71717a] font-mono truncate">{source}</span>
-              <span className={cn("text-[11px] font-mono", isLow ? "text-amber-400" : "text-[#a1a1aa]")}>
+              <span className={cn("text-[11px] font-mono", textColor)}>
                 {info.remaining}/{info.limit}
               </span>
             </div>
             <div className="h-1 rounded-full bg-[#27272a] overflow-hidden">
               <div
-                className={cn("h-full rounded-full transition-all", isLow ? "bg-amber-500" : "bg-[#06b6d4]")}
-                style={{ width: `${Math.max(2, 100 - pct)}%` }}
+                className="h-full rounded-full transition-all"
+                style={{ width: `${Math.max(2, 100 - pct)}%`, background: barColor }}
               />
             </div>
           </div>
@@ -74,15 +87,24 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "relative flex flex-col bg-[#18181b] border-r border-[#27272a] transition-all duration-200 shrink-0",
-        collapsed ? "w-0 overflow-hidden" : "w-[240px]"
+        "relative flex flex-col bg-[#18181b] border-r border-[#27272a] shrink-0 overflow-hidden",
+        "transition-[width] duration-300 ease-in-out"
       )}
+      style={{ width: collapsed ? 0 : 240 }}
     >
       {/* Brand */}
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-[#27272a]">
-        <div className="relative flex items-center justify-center w-7 h-7 rounded-md bg-[#09090b] border border-[#3f3f46]">
+      <div className="flex items-center gap-2.5 px-4 py-4" style={{ borderBottom: "1px solid #27272a" }}>
+        <div
+          className={cn(
+            "relative flex items-center justify-center w-8 h-8 rounded-lg bg-[#09090b] border border-[#3f3f46] shrink-0",
+            "logo-glow"
+          )}
+        >
           <span className="font-mono text-sm font-bold text-[#fafafa] leading-none">S</span>
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#06b6d4]" style={{ boxShadow: "0 0 6px rgba(6,182,212,0.6)" }} />
+          <span
+            className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#06b6d4]"
+            style={{ boxShadow: "0 0 8px rgba(6,182,212,0.8)" }}
+          />
         </div>
         <span className="font-mono text-sm font-bold tracking-tight text-[#fafafa]">SCRPR</span>
       </div>
@@ -92,6 +114,16 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         {/* Tables section */}
         <div className="px-3 mb-1">
           <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Tables</p>
+
+          {/* Skeleton when no data yet */}
+          {!data && (
+            <div className="space-y-1.5 px-1">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="skeleton h-7 w-full rounded-md" style={{ animationDelay: `${i * 0.1}s` }} />
+              ))}
+            </div>
+          )}
+
           <div className="space-y-0.5">
             {data?.items.map((table, i) => {
               const isActive = table.id === activeTableId;
@@ -100,19 +132,23 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
                   key={table.id}
                   href={`/table/${table.id}`}
                   className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-all group",
+                    "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm group relative",
                     "sidebar-item-animate",
+                    "transition-all duration-200",
                     isActive
-                      ? "bg-[#06b6d4]/10 text-[#06b6d4] border border-[#06b6d4]/20"
+                      ? "bg-[#06b6d4]/10 text-[#06b6d4] border border-[#06b6d4]/20 sidebar-active-item"
                       : "text-[#a1a1aa] hover:text-[#fafafa] hover:bg-[#27272a] border border-transparent"
                   )}
                   style={{ animationDelay: `${i * 30}ms` }}
                 >
                   <span
                     className={cn(
-                      "w-1.5 h-1.5 rounded-full shrink-0 transition-all",
-                      isActive ? "bg-[#06b6d4]" : "bg-[#3f3f46] group-hover:bg-[#71717a]"
+                      "w-1.5 h-1.5 rounded-full shrink-0 transition-all duration-200",
+                      isActive
+                        ? "bg-[#06b6d4]"
+                        : "bg-[#3f3f46] group-hover:bg-[#71717a]"
                     )}
+                    style={isActive ? { boxShadow: "0 0 6px rgba(6,182,212,0.7)" } : undefined}
                   />
                   <span className="truncate font-medium text-[13px]">{table.name}</span>
                 </Link>
@@ -124,7 +160,7 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger
               render={
-                <button className="flex items-center gap-2 px-2 py-1.5 mt-1 w-full rounded-md text-[13px] text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all border border-transparent hover:border-[#27272a]" />
+                <button className="flex items-center gap-2 px-2 py-1.5 mt-1 w-full rounded-md text-[13px] text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 border border-transparent hover:border-[#27272a]" />
               }
             >
               <span className="text-base leading-none">+</span>
@@ -149,7 +185,7 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
                 <Button
                   onClick={handleCreate}
                   disabled={createTable.isPending}
-                  className="w-full bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b] font-semibold border-0"
+                  className="w-full btn-cyan-gradient font-semibold"
                 >
                   {createTable.isPending ? "Creating..." : "Create Table"}
                 </Button>
@@ -158,18 +194,18 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           </Dialog>
         </div>
 
-        {/* Divider */}
-        <div className="mx-3 my-2 border-t border-[#27272a]" />
+        {/* Gradient Divider */}
+        <div className="mx-3 my-2 gradient-divider" />
 
         {/* Quick Actions */}
         <div className="px-3">
           <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Quick Actions</p>
           <div className="space-y-0.5">
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all text-left">
+            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left">
               <span className="text-sm">⬆</span>
               <span>Import CSV</span>
             </button>
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all text-left">
+            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left">
               <span className="text-sm">◧</span>
               <span>Templates</span>
             </button>

@@ -46,10 +46,29 @@ const ENRICHMENT_SOURCES = [
   },
 ];
 
-function StatusDot({ status }: { status: "available" | "no_key" | "rate_limited" }) {
-  if (status === "available") return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />;
-  if (status === "no_key") return <span className="w-1.5 h-1.5 rounded-full bg-[#52525b] shrink-0" />;
-  return <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />;
+type SourceStatus = "available" | "no_key" | "rate_limited";
+
+function StatusBadge({ status }: { status: SourceStatus }) {
+  if (status === "available")
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-900/30 border border-emerald-700/40 text-[10px] font-mono text-emerald-400">
+        <span className="w-1 h-1 rounded-full bg-emerald-400" />
+        Active
+      </span>
+    );
+  if (status === "no_key")
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#27272a] border border-[#3f3f46] text-[10px] font-mono text-[#71717a]">
+        <span className="w-1 h-1 rounded-full bg-[#52525b]" />
+        Configure
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-900/30 border border-amber-700/40 text-[10px] font-mono text-amber-400">
+      <span className="w-1 h-1 rounded-full bg-amber-400" />
+      Low Quota
+    </span>
+  );
 }
 
 function StepDots({ step }: { step: "choose" | "configure" }) {
@@ -60,32 +79,41 @@ function StepDots({ step }: { step: "choose" | "configure" }) {
   const activeIdx = step === "choose" ? 0 : 1;
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       {steps.map((s, i) => (
         <div key={s.id} className="flex items-center gap-2">
-          <div
-            className={cn(
-              "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold transition-all",
-              i === activeIdx
-                ? "bg-[#06b6d4] text-[#09090b]"
-                : i < activeIdx
-                ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30"
-                : "bg-[#27272a] text-[#52525b]"
-            )}
-            style={i === activeIdx ? { boxShadow: "0 0 8px rgba(6,182,212,0.4)" } : undefined}
-          >
-            {i < activeIdx ? "✓" : i + 1}
+          <div className="flex items-center gap-1.5">
+            <div
+              className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold transition-all duration-200",
+                i === activeIdx
+                  ? "bg-[#06b6d4] text-[#09090b]"
+                  : i < activeIdx
+                  ? "bg-emerald-500/20 text-emerald-500 border border-emerald-500/30"
+                  : "bg-[#27272a] text-[#52525b]"
+              )}
+              style={i === activeIdx ? { boxShadow: "0 0 10px rgba(6,182,212,0.5)" } : undefined}
+            >
+              {i < activeIdx ? "✓" : i + 1}
+            </div>
+            <span
+              className={cn(
+                "text-xs transition-colors",
+                i === activeIdx ? "text-[#fafafa] font-medium" : "text-[#52525b]"
+              )}
+            >
+              {s.label}
+            </span>
           </div>
-          <span
-            className={cn(
-              "text-xs",
-              i === activeIdx ? "text-[#fafafa] font-medium" : "text-[#52525b]"
-            )}
-          >
-            {s.label}
-          </span>
           {i < steps.length - 1 && (
-            <div className={cn("w-8 h-px", i < activeIdx ? "bg-emerald-500/30" : "bg-[#27272a]")} />
+            <div
+              className="w-8 h-px transition-all duration-300"
+              style={{
+                background: i < activeIdx
+                  ? "linear-gradient(90deg, rgba(16,185,129,0.4), rgba(16,185,129,0.2))"
+                  : "#27272a"
+              }}
+            />
           )}
         </div>
       ))}
@@ -100,7 +128,7 @@ function PromptDisplay({ value }: { value: string }) {
     <>
       {parts.map((part, i) =>
         /^\/[^/\n]+\/$/.test(part) ? (
-          <span key={i} className="text-[#06b6d4] font-medium">
+          <span key={i} className="text-[#06b6d4] font-medium" style={{ textShadow: "0 0 8px rgba(6,182,212,0.3)" }}>
             {part}
           </span>
         ) : (
@@ -141,32 +169,33 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
     <>
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-40"
+        className="fixed inset-0 z-40"
+        style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed inset-y-0 right-0 w-96 z-50 flex flex-col panel-slide-in">
+      <div className="fixed inset-y-0 right-0 w-[400px] z-50 flex flex-col panel-slide-in">
         {/* Glass background */}
-        <div className="absolute inset-0 bg-[#18181b]/95 backdrop-blur-xl border-l border-[#27272a]" />
+        <div className="absolute inset-0 glass-panel border-l border-[#3f3f46]/60" style={{ borderRadius: 0 }} />
 
         {/* Top accent line */}
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#06b6d4]/50 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#06b6d4]/60 to-transparent" />
 
         <div className="relative flex flex-col h-full">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-[#27272a]">
+          <div className="flex items-start justify-between px-5 py-4 border-b border-[#27272a]">
             <div>
               <h2 className="font-semibold text-[#fafafa] font-mono text-sm">
                 {step === "choose" ? "Add Enrichment Column" : "Configure Column"}
               </h2>
-              <div className="mt-2">
+              <div className="mt-2.5">
                 <StepDots step={step} />
               </div>
             </div>
             <button
               onClick={onClose}
-              className="w-7 h-7 rounded-md flex items-center justify-center text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all text-sm"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all text-sm mt-0.5"
             >
               ✕
             </button>
@@ -189,12 +218,12 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                           key={type}
                           onClick={() => setSelectedType(type)}
                           className={cn(
-                            "p-3 rounded-xl border text-left transition-all",
+                            "p-3 rounded-xl border text-left transition-all duration-200",
                             isSelected
                               ? "border-[#06b6d4]/50 bg-[#06b6d4]/8 text-[#fafafa]"
-                              : "border-[#27272a] bg-[#27272a]/30 hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#fafafa]"
+                              : "border-[#27272a] bg-[#27272a]/30 hover:border-[#3f3f46] hover:bg-[#27272a]/50 text-[#a1a1aa] hover:text-[#fafafa]"
                           )}
-                          style={isSelected ? { boxShadow: "0 0 12px rgba(6,182,212,0.12)" } : undefined}
+                          style={isSelected ? { boxShadow: "0 0 14px rgba(6,182,212,0.15), inset 0 0 20px rgba(6,182,212,0.03)" } : undefined}
                         >
                           <div className="font-medium text-sm mb-1">
                             {type === "agent" ? "🤖 AI Agent" : "⛓ Waterfall"}
@@ -221,10 +250,10 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                           <label
                             key={source.id}
                             className={cn(
-                              "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all",
+                              "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200",
                               isChecked
                                 ? "border-[#3f3f46] bg-[#27272a]/60"
-                                : "border-[#27272a] bg-transparent hover:border-[#3f3f46]"
+                                : "border-[#27272a] bg-transparent hover:border-[#3f3f46] hover:bg-[#27272a]/30"
                             )}
                           >
                             <input
@@ -240,13 +269,13 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                               className="mt-0.5 accent-[#06b6d4]"
                             />
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <StatusDot status={source.status} />
+                              <div className="flex items-center justify-between gap-2 mb-0.5">
                                 <span className="text-sm text-[#fafafa] font-medium">
                                   {source.icon} {source.name}
                                 </span>
+                                <StatusBadge status={source.status} />
                               </div>
-                              <div className="text-[11px] text-[#52525b] mt-0.5">{source.description}</div>
+                              <div className="text-[11px] text-[#52525b]">{source.description}</div>
                               <div className="text-[10px] font-mono text-[#3f3f46] mt-0.5">{source.note}</div>
                             </div>
                           </label>
@@ -258,17 +287,15 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
 
                 {/* Agent: show available sources info */}
                 {selectedType === "agent" && (
-                  <div className="rounded-xl border border-[#27272a] p-3 space-y-2">
+                  <div className="rounded-xl border border-[#27272a] bg-[#09090b]/50 p-3 space-y-2.5">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2">
                       Available Sources
                     </p>
                     {ENRICHMENT_SOURCES.map((source) => (
-                      <div key={source.id} className="flex items-center gap-2">
-                        <StatusDot status={source.status} />
-                        <span className="text-xs text-[#a1a1aa]">
-                          {source.icon} {source.name}
-                        </span>
-                        <span className="text-[10px] font-mono text-[#3f3f46] ml-auto">{source.note}</span>
+                      <div key={source.id} className="flex items-center gap-2.5">
+                        <span className="text-sm">{source.icon}</span>
+                        <span className="text-xs text-[#a1a1aa] flex-1">{source.name}</span>
+                        <StatusBadge status={source.status} />
                       </div>
                     ))}
                   </div>
@@ -276,8 +303,7 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
 
                 <button
                   onClick={() => setStep("configure")}
-                  className="w-full py-2.5 rounded-lg bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b] font-semibold text-sm transition-all"
-                  style={{ boxShadow: "0 0 12px rgba(6,182,212,0.2)" }}
+                  className="w-full py-2.5 rounded-lg btn-cyan-gradient text-sm font-semibold"
                 >
                   Next: Configure →
                 </button>
@@ -307,17 +333,22 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                   </div>
 
                   {/* Code-editor style textarea */}
-                  <div className="relative">
+                  <div className="relative rounded-xl overflow-hidden border border-[#3f3f46] bg-[#09090b]">
+                    <div className="absolute left-0 top-0 bottom-0 w-8 bg-[#18181b] border-r border-[#27272a] flex flex-col pt-2.5 gap-[1.625rem] pointer-events-none">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <span key={i} className="text-[10px] text-[#3f3f46] font-mono text-right pr-2 leading-none">{i + 1}</span>
+                      ))}
+                    </div>
                     <textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       placeholder="Find the head of campus recruitment at /Company/. Return their name, title, and email."
                       rows={6}
                       className={cn(
-                        "w-full rounded-xl border border-[#3f3f46] bg-[#09090b] px-3 py-2.5",
+                        "w-full pl-10 pr-3 py-2.5",
                         "text-sm text-[#fafafa] placeholder:text-[#3f3f46]",
-                        "focus:outline-none focus:ring-1 focus:ring-[#06b6d4]/40 focus:border-[#06b6d4]/40",
-                        "resize-none leading-relaxed font-mono",
+                        "focus:outline-none",
+                        "resize-none leading-relaxed font-mono bg-transparent",
                         "transition-all"
                       )}
                     />
@@ -328,7 +359,8 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                     <p className="text-[11px] text-[#52525b] leading-relaxed">
                       Use{" "}
                       <code className="text-[#06b6d4] bg-[#06b6d4]/10 px-1 rounded font-mono">/ColumnName/</code>{" "}
-                      to reference other columns. Variables are highlighted in cyan.
+                      to reference other columns. Variables are highlighted in{" "}
+                      <span className="text-[#06b6d4]">cyan</span>.
                     </p>
                   </div>
 
@@ -354,14 +386,9 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
                     className={cn(
                       "flex-1 py-2 rounded-lg text-sm font-semibold transition-all",
                       columnName.trim() && prompt.trim()
-                        ? "bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b]"
+                        ? "btn-cyan-gradient"
                         : "bg-[#27272a] text-[#52525b] cursor-not-allowed"
                     )}
-                    style={
-                      columnName.trim() && prompt.trim()
-                        ? { boxShadow: "0 0 12px rgba(6,182,212,0.2)" }
-                        : undefined
-                    }
                   >
                     Add Column
                   </button>

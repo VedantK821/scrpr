@@ -146,16 +146,19 @@ function DraftCard({
   return (
     <div
       className={cn(
-        "rounded-xl border transition-all card-animate",
+        "rounded-xl border transition-all duration-200 card-animate",
         skipped
           ? "border-[#27272a] bg-[#18181b]/30 opacity-40"
           : sent
           ? "border-emerald-800/30 bg-emerald-950/10"
           : selected
           ? "border-[#06b6d4]/30 bg-[#06b6d4]/5"
-          : "border-[#27272a] bg-[#18181b] hover:border-[#3f3f46]"
+          : "border-[#27272a] glass-panel hover:border-[#3f3f46]"
       )}
-      style={{ animationDelay: `${index * 40}ms` }}
+      style={{
+        animationDelay: `${index * 40}ms`,
+        ...(selected ? { boxShadow: "0 0 16px rgba(6,182,212,0.08)" } : undefined),
+      }}
     >
       {/* Card header */}
       <div className="flex items-center gap-3 px-4 py-3">
@@ -323,12 +326,12 @@ function PersonalizationSelector({
             key={opt.id}
             onClick={() => onChange(opt.id)}
             className={cn(
-              "p-3.5 rounded-xl border text-left transition-all",
+              "p-3.5 rounded-xl border text-left transition-all duration-200",
               isSelected
-                ? "border-[#06b6d4]/50 bg-[#06b6d4]/8"
-                : "border-[#27272a] bg-[#18181b] hover:border-[#3f3f46]"
+                ? "border-[#06b6d4]/50 bg-[#06b6d4]/8 text-[#fafafa]"
+                : "border-[#27272a] bg-[#18181b] hover:border-[#3f3f46] hover:bg-[#1c1c1f] text-[#a1a1aa]"
             )}
-            style={isSelected ? { boxShadow: "0 0 16px rgba(6,182,212,0.12)" } : undefined}
+            style={isSelected ? { boxShadow: "0 0 20px rgba(6,182,212,0.15), inset 0 0 24px rgba(6,182,212,0.03)" } : undefined}
           >
             <div className="text-lg mb-1.5">{opt.emoji}</div>
             <div className={cn("font-semibold text-sm", isSelected ? "text-[#fafafa]" : "text-[#a1a1aa]")}>
@@ -608,13 +611,8 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
                   "inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm transition-all",
                   generating || !subjectTemplate.trim() || !bodyTemplate.trim()
                     ? "bg-[#27272a] text-[#52525b] cursor-not-allowed"
-                    : "bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b]"
+                    : "btn-cyan-gradient"
                 )}
-                style={
-                  !generating && subjectTemplate.trim() && bodyTemplate.trim()
-                    ? { boxShadow: "0 0 16px rgba(6,182,212,0.2)" }
-                    : undefined
-                }
               >
                 {generating ? (
                   <>
@@ -692,9 +690,8 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
                   "flex-1 py-2 rounded-lg font-semibold text-sm transition-all",
                   selectedDraftIds.size === 0
                     ? "bg-[#27272a] text-[#52525b] cursor-not-allowed"
-                    : "bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b]"
+                    : "btn-cyan-gradient"
                 )}
-                style={selectedDraftIds.size > 0 ? { boxShadow: "0 0 12px rgba(6,182,212,0.2)" } : undefined}
               >
                 Continue to Send → ({selectedDraftIds.size} selected)
               </button>
@@ -713,7 +710,7 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
             </div>
 
             {/* Send settings */}
-            <div className="rounded-xl border border-[#27272a] bg-[#18181b] p-5 space-y-4">
+            <div className="rounded-xl border border-[#27272a] glass-panel p-5 space-y-4">
               <h3 className="text-sm font-semibold text-[#fafafa] font-mono">Send Settings</h3>
               <div className="flex items-center gap-3">
                 <Label className="text-sm text-[#71717a] whitespace-nowrap">Delay between emails</Label>
@@ -733,7 +730,7 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
             </div>
 
             {/* Selected emails summary */}
-            <div className="rounded-xl border border-[#27272a] bg-[#18181b] p-5">
+            <div className="rounded-xl border border-[#27272a] glass-panel p-5">
               <h3 className="text-sm font-semibold text-[#fafafa] font-mono mb-3">Recipients</h3>
               <div className="space-y-1.5 max-h-48 overflow-y-auto">
                 {activeDrafts
@@ -767,7 +764,7 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
             )}
 
             {/* Test send */}
-            <div className="rounded-xl border border-[#27272a] bg-[#18181b] p-5 space-y-3">
+            <div className="rounded-xl border border-[#27272a] glass-panel p-5 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-[#fafafa] font-mono mb-0.5">Test Send</h3>
                 <p className="text-[11px] text-[#52525b]">Send the first selected draft to yourself to verify formatting.</p>
@@ -817,17 +814,12 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
                   "flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all",
                   sending || selectedDraftIds.size === 0 || !!sendResult
                     ? "bg-[#27272a] text-[#52525b] cursor-not-allowed"
-                    : "bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b]"
+                    : "btn-cyan-gradient"
                 )}
-                style={
-                  !sending && selectedDraftIds.size > 0 && !sendResult
-                    ? { boxShadow: "0 0 16px rgba(6,182,212,0.2)" }
-                    : undefined
-                }
               >
                 {sending ? (
                   <span className="flex items-center justify-center gap-2">
-                    <span className="w-3.5 h-3.5 border-2 border-[#06b6d4]/30 border-t-[#06b6d4] rounded-full animate-spin" />
+                    <span className="w-3.5 h-3.5 border-2 border-[#09090b]/30 border-t-[#09090b] rounded-full animate-spin" />
                     Sending...
                   </span>
                 ) : (

@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
       <div className="flex flex-col flex-1 min-w-0">
         <Topbar onToggleSidebar={() => setCollapsed((v) => !v)} sidebarCollapsed={collapsed} />
-        <main className="flex-1 overflow-auto relative dot-grid page-fade-in">
+        <main className="flex-1 overflow-auto relative main-content page-fade-in">
           {children}
         </main>
       </div>

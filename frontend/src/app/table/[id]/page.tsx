@@ -112,10 +112,9 @@ function RunAllButton({ tableId, enrichmentColumns }: { tableId: string; enrichm
       className={cn(
         "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all",
         running
-          ? "bg-[#06b6d4]/10 text-[#06b6d4] cursor-not-allowed"
-          : "bg-[#06b6d4] text-[#09090b] hover:bg-[#22d3ee]"
+          ? "bg-[#06b6d4]/10 text-[#06b6d4] cursor-not-allowed run-pulse"
+          : "btn-cyan-gradient"
       )}
-      style={running ? undefined : { boxShadow: "0 0 12px rgba(6,182,212,0.25)" }}
     >
       <span className="text-xs">{running ? "⏳" : "▶"}</span>
       {running ? "Running..." : "Run All"}
@@ -125,18 +124,26 @@ function RunAllButton({ tableId, enrichmentColumns }: { tableId: string; enrichm
 
 function TableStats({ rows, columns }: { rows: unknown[]; columns: unknown[] }) {
   return (
-    <div className="flex items-center gap-4 text-xs text-[#52525b] font-mono">
-      <span>
-        <span className="text-[#71717a]">{rows.length}</span>{" "}
-        {rows.length === 1 ? "row" : "rows"}
-      </span>
+    <div className="flex items-center gap-2 text-xs text-[#52525b] font-mono mt-1">
+      <span className="text-[#71717a]">{rows.length}</span>
+      <span>{rows.length === 1 ? "row" : "rows"}</span>
       <span className="text-[#3f3f46]">·</span>
-      <span>
-        <span className="text-[#71717a]">{columns.length}</span>{" "}
-        {columns.length === 1 ? "col" : "cols"}
-      </span>
+      <span className="text-[#71717a]">{columns.length}</span>
+      <span>{columns.length === 1 ? "col" : "cols"}</span>
+      <span className="text-[#3f3f46]">·</span>
+      <span className="text-[#3f3f46]">Last enriched: never</span>
     </div>
   );
+}
+
+// Toolbar button variant styles
+const toolbarBtnBase = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150";
+const toolbarBtnDefault = `${toolbarBtnBase} text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] hover:text-[#fafafa]`;
+const toolbarBtnEnrich = `${toolbarBtnBase} text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 border border-[#06b6d4]/20 hover:border-[#06b6d4]/50 font-semibold`;
+
+// Toolbar divider
+function ToolbarDivider() {
+  return <div className="h-5 w-px bg-[#3f3f46] mx-1" />;
 }
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
@@ -222,27 +229,32 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="border-b border-[#27272a] bg-[#09090b]/60 backdrop-blur-sm shrink-0">
+      <div className="border-b border-[#27272a] bg-[#09090b]/70 backdrop-blur-sm shrink-0">
+        {/* Cyan top accent line */}
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#06b6d4]/30 to-transparent pointer-events-none" />
+
         {/* Title row */}
         <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-[#fafafa] font-mono truncate">
-              {table?.name ?? (
-                <span className="skeleton h-6 w-40 inline-block rounded" />
-              )}
-            </h1>
+            {table?.name ? (
+              <h1 className="text-2xl font-bold text-[#fafafa] font-mono truncate tracking-tight">
+                {table.name}
+              </h1>
+            ) : (
+              <div className="skeleton h-7 w-44 rounded-md" />
+            )}
             <TableStats rows={rows} columns={columns} />
           </div>
           <RunAllButton tableId={id} enrichmentColumns={enrichmentColumns} />
         </div>
 
         {/* Action toolbar */}
-        <div className="flex items-center gap-2 px-6 pb-3 flex-wrap">
+        <div className="flex items-center gap-1.5 px-6 pb-3 flex-wrap">
           {/* Column button */}
           <Dialog open={colDialogOpen} onOpenChange={setColDialogOpen}>
             <DialogTrigger
               render={
-                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all" />
+                <button className={toolbarBtnDefault} />
               }
             >
               + Column
@@ -264,7 +276,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 </div>
                 <Button
                   onClick={handleAddColumn}
-                  className="w-full bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b] font-semibold border-0"
+                  className="w-full btn-cyan-gradient font-semibold border-0"
                 >
                   Add Column
                 </Button>
@@ -273,12 +285,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           </Dialog>
 
           {/* Row */}
-          <button
-            onClick={handleAddRow}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
-          >
+          <button onClick={handleAddRow} className={toolbarBtnDefault}>
             + Row
           </button>
+
+          <ToolbarDivider />
 
           {/* Import */}
           <input
@@ -291,40 +302,41 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           <button
             onClick={() => csvInputRef.current?.click()}
             disabled={isImporting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all disabled:opacity-50"
+            className={cn(toolbarBtnDefault, "disabled:opacity-50")}
           >
             <span>⬆</span>
             {isImporting ? "Importing..." : "Import"}
           </button>
 
           {/* Export */}
-          <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
-          >
+          <button onClick={handleExportCSV} className={toolbarBtnDefault}>
             <span>⬇</span>
             Export
           </button>
 
-          {/* Spacer */}
-          <div className="flex-1" />
+          <ToolbarDivider />
 
           {/* Enrich Data */}
           <button
             onClick={() => setEnrichPanelOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 border border-[#06b6d4]/20 hover:border-[#06b6d4]/40 transition-all"
+            className={toolbarBtnEnrich}
           >
             + Enrich Data
           </button>
 
+          <ToolbarDivider />
+
           {/* Email */}
           <Link
             href={`/table/${id}/emails`}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
+            className={toolbarBtnDefault}
           >
             <span>📧</span>
             Email
           </Link>
+
+          {/* Spacer */}
+          <div className="flex-1" />
 
           {/* Shortcuts help */}
           <button
@@ -338,10 +350,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       {/* ── Data table ── */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 relative">
+        {/* Subtle inset top border */}
+        <div className="absolute inset-x-0 top-0 h-px bg-[#06b6d4]/20 z-10 pointer-events-none" />
+
         {columns.length === 0 && rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8 card-animate">
-            <div className="w-16 h-16 rounded-xl border-2 border-dashed border-[#3f3f46] flex items-center justify-center mb-4 bg-[#18181b]">
+            <div className="w-16 h-16 rounded-xl border-2 border-dashed border-[#3f3f46] flex items-center justify-center mb-4 glass-panel">
               <span className="text-2xl opacity-50">◫</span>
             </div>
             <h3 className="text-base font-semibold text-[#a1a1aa] mb-1">Empty table</h3>
