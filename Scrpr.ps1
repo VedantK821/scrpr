@@ -37,8 +37,7 @@ if ($ollamaRunning) {
 
 # Step 2: Backend
 Write-Host "   [2/3] Starting backend API..." -ForegroundColor Yellow
-$env:DATABASE_URL = "sqlite+aiosqlite:///./scrpr.db"
-Start-Process -FilePath "python" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory "$PSScriptRoot\backend" -WindowStyle Hidden
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d `"$PSScriptRoot\backend`" && set DATABASE_URL=sqlite+aiosqlite:///./scrpr.db && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WindowStyle Hidden
 
 Write-Host "         Waiting for backend" -ForegroundColor DarkGray -NoNewline
 $attempts = 0
