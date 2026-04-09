@@ -87,12 +87,15 @@ function EnrichmentColumnHeader({
   }, [isFinished]);
 
   const handleRun = async () => {
+    console.log(`[Scrpr] Running enrichment for column ${column.name} (${column.id})`);
     try {
       setIsRunning(true);
       setStartTime(Date.now());
       setElapsed(0);
-      await api.enrichments.trigger(tableId, column.id);
-    } catch {
+      const res = await api.enrichments.trigger(tableId, column.id);
+      console.log(`[Scrpr] Enrichment triggered:`, res);
+    } catch (err) {
+      console.error(`[Scrpr] Enrichment trigger failed:`, err);
       setIsRunning(false);
       setStartTime(null);
     }
@@ -166,16 +169,22 @@ function RunAllButton({
   const [running, setRunning] = useState(false);
 
   const handleClick = async () => {
-    if (enrichmentColumns.length === 0) return;
+    console.log(`[Scrpr] Run All clicked. ${enrichmentColumns.length} enrichment columns.`);
+    if (enrichmentColumns.length === 0) {
+      console.log("[Scrpr] No enrichment columns to run!");
+      return;
+    }
     setRunning(true);
     try {
-      if (onRunAll) {
-        await onRunAll();
-      } else {
-        await Promise.all(
-          enrichmentColumns.map((col) => api.enrichments.trigger(tableId, col.id))
-        );
-      }
+      await Promise.all(
+        enrichmentColumns.map(async (col) => {
+          console.log(`[Scrpr] Triggering ${col.name} (${col.id})`);
+          const res = await api.enrichments.trigger(tableId, col.id);
+          console.log(`[Scrpr] Triggered ${col.name}:`, res);
+        })
+      );
+    } catch (err) {
+      console.error("[Scrpr] Run All failed:", err);
     } finally {
       setTimeout(() => setRunning(false), 3000);
     }
