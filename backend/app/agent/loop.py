@@ -13,9 +13,9 @@ from app.scraper.engine import ScrapingEngine
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_LOOPS = 5
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 180
 CONFIDENCE_THRESHOLD = 0.3
-GOOGLE_SEARCH_URL = "https://www.google.com/search"
+DUCKDUCKGO_SEARCH_URL = "https://html.duckduckgo.com/html/"
 
 
 @dataclass
@@ -144,36 +144,32 @@ class AgentLoop:
     async def _google_search(
         self, query: str, num_results: int = 5
     ) -> list[dict]:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        }
-        params = {"q": query, "num": num_results}
+        """Search using DuckDuckGo HTML (more scraping-friendly than Google)."""
+        from app.scraper.stealth import get_random_user_agent
+        headers = {"User-Agent": get_random_user_agent()}
+        data = {"q": query}
         results = []
         try:
             async with httpx.AsyncClient(
                 headers=headers, follow_redirects=True, timeout=15.0
             ) as client:
-                response = await client.get(GOOGLE_SEARCH_URL, params=params)
+                response = await client.post(DUCKDUCKGO_SEARCH_URL, data=data)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
 
-                for g in soup.select("div.g"):
-                    # Extract URL
-                    link = g.select_one("a[href]")
+                for result_div in soup.select("div.result, div.web-result"):
+                    link = result_div.select_one("a.result__a, a.result__url, h2 a")
+                    snippet_el = result_div.select_one("a.result__snippet, .result__snippet")
                     url = None
                     if link:
                         href = link.get("href", "")
                         if href.startswith("http"):
                             url = href
-                        elif href.startswith("/url?q="):
-                            url = href[7:].split("&")[0]
+                        elif "uddg=" in href:
+                            import urllib.parse
+                            parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+                            url = parsed.get("uddg", [None])[0]
 
-                    # Extract snippet
-                    snippet_el = g.select_one("div[data-sncf], .VwiC3b, span.st")
                     snippet = snippet_el.get_text(strip=True) if snippet_el else ""
 
                     if url:

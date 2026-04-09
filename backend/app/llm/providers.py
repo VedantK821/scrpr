@@ -12,7 +12,7 @@ class ProviderConfig:
 
 def get_providers() -> list[ProviderConfig]:
     providers = []
-    providers.append(ProviderConfig(name="ollama", model="ollama/llama3:8b", api_base=settings.ollama_base_url))
+    providers.append(ProviderConfig(name="ollama", model="ollama/qwen3:8b", api_base=settings.ollama_base_url))
     if settings.gemini_api_key:
         providers.append(ProviderConfig(name="gemini", model="gemini/gemini-2.0-flash", api_key=settings.gemini_api_key))
     if settings.anthropic_api_key:

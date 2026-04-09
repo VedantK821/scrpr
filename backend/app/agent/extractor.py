@@ -29,7 +29,7 @@ class AgentExtractor:
         combined = self._combine_texts(page_texts)
         context_str = json.dumps(context, indent=2) if context else "No additional context provided."
         system_prompt = (
-            "You are a data extractor. Given a research prompt and web page content, "
+            "/no_think You are a data extractor. Given a research prompt and web page content, "
             "extract the relevant information and return it as structured JSON. "
             "Provide a confidence score from 0.0 (not found) to 1.0 (highly confident). "
             'Respond ONLY with JSON: {"data": {...}, "confidence": 0.0}'

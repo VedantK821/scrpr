@@ -21,7 +21,7 @@ class AgentEvaluator:
     async def evaluate(self, prompt: str, page_text: str, page_url: str) -> EvalResult:
         truncated_text = page_text[:MAX_PAGE_TEXT_LENGTH] if page_text else ""
         system_prompt = (
-            "You are a relevance evaluator. Given a research prompt and a web page's text content, "
+            "/no_think You are a relevance evaluator. Given a research prompt and a web page's text content, "
             "determine if the page contains relevant information to answer the prompt. "
             'Respond ONLY with a JSON object: {"relevant": true/false, "summary": "brief summary or reason"}'
         )
@@ -44,7 +44,10 @@ class AgentEvaluator:
     def _parse_eval_result(self, response: str) -> EvalResult:
         if not response:
             return EvalResult(relevant=False, summary="No response from LLM")
-        text = response.strip()
+        import re
+        text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        if not text:
+            text = response.strip()
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:

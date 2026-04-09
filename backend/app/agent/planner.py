@@ -12,7 +12,7 @@ class AgentPlanner:
     async def generate_queries(self, prompt: str, context: dict) -> list[str]:
         context_str = json.dumps(context, indent=2) if context else "No additional context provided."
         system_prompt = (
-            "You are a search query generator. Given a research prompt and context, "
+            "/no_think You are a search query generator. Given a research prompt and context, "
             "generate 3-5 targeted Google search queries that will help find the needed information. "
             "Respond ONLY with a JSON array of strings. Example: [\"query one\", \"query two\"]"
         )
@@ -42,7 +42,7 @@ class AgentPlanner:
         prev_queries_str = "\n".join(f"- {q}" for q in previous_queries)
         findings_str = "\n".join(f"- {f}" for f in findings_so_far) if findings_so_far else "No relevant findings yet."
         system_prompt = (
-            "You are a search query refiner. Given a research prompt, previous search queries, "
+            "/no_think You are a search query refiner. Given a research prompt, previous search queries, "
             "and what was found so far, generate 3-5 new, different search queries to find better results. "
             "Avoid repeating previous queries. Respond ONLY with a JSON array of strings."
         )
@@ -66,8 +66,11 @@ class AgentPlanner:
     def _parse_queries(self, response: str) -> list[str]:
         if not response:
             return []
-        # Try to find JSON array in the response
-        text = response.strip()
+        # Strip thinking tags (qwen3 and similar models)
+        import re
+        text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        if not text:
+            text = response.strip()
         # Look for a JSON array
         start = text.find("[")
         end = text.rfind("]")
