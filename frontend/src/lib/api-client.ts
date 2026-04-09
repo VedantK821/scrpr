@@ -77,6 +77,16 @@ export const api = {
       }),
   },
   csv: {
+    import: async (tableId: string, file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/api/tables/${tableId}/import-csv`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Import failed");
+      return res.json() as Promise<{ rows_imported: number; columns: number }>;
+    },
     export: async (tableId: string, columns: import("@/types").Column[], rows: import("@/types").Row[]) => {
       const headers = columns.map((c) => c.name);
       const csvRows = rows.map((row) => {
@@ -95,6 +105,9 @@ export const api = {
       a.href = url;
       a.download = `scrpr-export.csv`;
       a.click();
+    },
+    exportServer: (tableId: string) => {
+      window.open(`${API_BASE}/api/tables/${tableId}/export-csv`, "_blank");
     },
   },
 };

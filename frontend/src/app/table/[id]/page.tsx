@@ -1,7 +1,7 @@
 "use client";
-import { use, useState, useCallback, useEffect } from "react";
+import { use, useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTable, useColumns, useRows, useCreateColumn, useCreateRow } from "@/hooks/use-api";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api-client";
@@ -102,10 +102,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const { data: rows = [] } = useRows(id);
   const createColumn = useCreateColumn(id);
   const createRow = useCreateRow(id);
+  const queryClient = useQueryClient();
   const [colName, setColName] = useState("");
   const [colDialogOpen, setColDialogOpen] = useState(false);
   const [enrichPanelOpen, setEnrichPanelOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Connect WebSocket for real-time cell updates
   useWebSocket(id);
@@ -156,6 +159,23 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     api.csv.export(id, columns, rows);
   };
 
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    try {
+      await api.csv.import(id, file);
+      await queryClient.invalidateQueries({ queryKey: ["columns", id] });
+      await queryClient.invalidateQueries({ queryKey: ["rows", id] });
+    } catch (err) {
+      console.error("CSV import failed:", err);
+    } finally {
+      setIsImporting(false);
+      // Reset file input so the same file can be re-imported if needed
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
+
   const enrichmentColumns = columns.filter((c) => ENRICHMENT_TYPES.has(c.type));
 
   return (
@@ -177,7 +197,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             <Button variant="outline" size="sm">Email</Button>
           </Link>
 
-          {/* Export CSV */}
+          {/* CSV import/export */}
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={handleImportCSV}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={isImporting}
+          >
+            {isImporting ? "Importing..." : "Import CSV"}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportCSV}>
             Export CSV
           </Button>
