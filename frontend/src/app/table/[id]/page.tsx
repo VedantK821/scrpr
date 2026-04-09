@@ -114,40 +114,40 @@ function EnrichmentColumnHeader({
   })();
 
   return (
-    <div className="flex items-center gap-2 w-full group">
+    <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#27272a] bg-[#09090b]">
       <div className="flex items-center gap-1.5 flex-1 min-w-0">
-        <span className="text-[10px] font-mono text-[#52525b]">{typeLabel}</span>
+        <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-[#06b6d4]/10 text-[#06b6d4]">{typeLabel}</span>
         <span className="truncate text-xs font-medium text-[#a1a1aa]">{column.name}</span>
-        {progressLabel && (
-          <span className={cn(
-            "text-[10px] font-mono whitespace-nowrap",
-            isFinished ? "text-emerald-400" : errors > 0 ? "text-amber-400" : "text-[#06b6d4]"
-          )}>
-            {progressLabel}
-          </span>
-        )}
       </div>
+
+      {/* Status / Progress */}
+      {progressLabel && (
+        <span className={cn(
+          "text-[10px] font-mono whitespace-nowrap",
+          isFinished ? "text-emerald-400" : errors > 0 ? "text-amber-400" : "text-[#06b6d4]"
+        )}>
+          {progressLabel}
+        </span>
+      )}
+
       <button
         onClick={handleRun}
         disabled={isRunning && !isFinished}
-        title="Run enrichment"
+        title={isRunning ? "Running..." : "Run enrichment on all rows"}
         className={cn(
-          "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono transition-all",
+          "shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition-all",
           isRunning && !isFinished
-            ? "text-[#06b6d4] bg-[#06b6d4]/10 cursor-not-allowed opacity-70"
-            : "text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 hover:shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+            ? "text-[#06b6d4] bg-[#06b6d4]/10 cursor-not-allowed animate-pulse"
+            : "text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20"
         )}
       >
-        {isRunning && !isFinished ? "..." : "▶"}
+        {isRunning && !isFinished ? `⏳ ${completed}/${total}` : "▶ Run"}
       </button>
 
-      {/* Progress bar on header */}
+      {/* Progress bar */}
       {isRunning && !isFinished && total > 0 && (
-        <div className="absolute inset-x-0 bottom-0 h-0.5 bg-[#27272a]">
-          <div
-            className="h-full bg-[#06b6d4] transition-all duration-500"
-            style={{ width: `${pct}%` }}
-          />
+        <div className="absolute inset-x-0 bottom-0 h-0.5 rounded-b-lg overflow-hidden bg-[#27272a]">
+          <div className="h-full bg-[#06b6d4] transition-all duration-500" style={{ width: `${pct}%` }} />
         </div>
       )}
     </div>
@@ -554,6 +554,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           </div>
           <RunAllButton tableId={id} enrichmentColumns={enrichmentColumns} onRunAll={handleRunAll} />
         </div>
+
+        {/* Enrichment column progress (per-column status) */}
+        {enrichmentColumns.length > 0 && (
+          <div className="flex items-center gap-3 px-6 pb-2 flex-wrap">
+            {enrichmentColumns.map((col) => (
+              <EnrichmentColumnHeader key={col.id} column={col} tableId={id} />
+            ))}
+          </div>
+        )}
 
         {/* Action toolbar */}
         <div className="flex items-center gap-1.5 px-6 pb-3 flex-wrap">
