@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     hunter_api_key: str = ""
     apollo_api_key: str = ""
 
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_pass: str = ""
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     frontend_url: str = "http://localhost:3000"
