@@ -30,17 +30,21 @@
       {
         "from": "../backend",
         "to": "backend",
-        "filter": ["**/*", "!__pycache__/**", "!*.pyc", "!.pytest_cache/**", "!tests/**", "!*.db"]
+        "filter": ["**/*", "!__pycache__/**", "!**/__pycache__/**", "!*.pyc", "!**/*.pyc", "!.pytest_cache/**", "!tests/**", "!*.db", "!.venv/**"]
       },
       {
         "from": "../frontend/.next",
         "to": "frontend/.next",
-        "filter": ["**/*"]
+        "filter": ["**/*", "!cache/**"]
+      },
+      {
+        "from": "../frontend/public",
+        "to": "frontend/public"
       },
       {
         "from": "../frontend/node_modules",
         "to": "frontend/node_modules",
-        "filter": ["**/*"]
+        "filter": ["**/*", "!.cache/**", "!**/README.md", "!**/CHANGELOG.md", "!**/*.map"]
       },
       {
         "from": "../frontend/package.json",
@@ -51,9 +55,10 @@
         "to": "frontend/next.config.ts"
       }
     ],
+    "compression": "normal",
     "win": {
       "target": "nsis",
-      "icon": "icon.png"
+      "icon": "icon.ico"
     },
     "nsis": {
       "oneClick": true,

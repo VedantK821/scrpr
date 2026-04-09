@@ -38,6 +38,16 @@ async def connect_with_browser():
     raise HTTPException(status_code=400, detail="LinkedIn login failed or timed out")
 
 
+@router.post("/linkedin/import-browser")
+async def import_from_browser(body: dict | None = None):
+    """Auto-import LinkedIn cookie from a local browser (Floorp, Firefox, etc.)."""
+    browser_name = (body or {}).get("browser", "auto")
+    success = session.import_from_browser(browser_name)
+    if success:
+        return {"success": True, "message": f"LinkedIn cookie imported from browser"}
+    raise HTTPException(status_code=400, detail="Could not find LinkedIn cookie in any browser. Make sure you're logged into LinkedIn in Floorp/Firefox.")
+
+
 @router.post("/linkedin/disconnect")
 async def disconnect():
     """Clear LinkedIn session."""

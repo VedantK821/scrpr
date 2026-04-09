@@ -89,6 +89,90 @@ class LinkedInSession:
                 await browser.close()
                 return False
 
+    def import_from_browser(self, browser_name: str = "auto") -> bool:
+        """Auto-import li_at cookie from a local browser's cookie store.
+
+        Supports: floorp, firefox, chrome, edge.
+        Set browser_name="auto" to try all in order.
+        """
+        import platform
+        import shutil
+        import sqlite3
+        import tempfile
+
+        browsers_to_try = [browser_name] if browser_name != "auto" else ["floorp", "firefox", "chrome", "edge"]
+
+        appdata = os.environ.get("APPDATA", "")
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+
+        # Map browser names to their cookie DB paths (Windows)
+        cookie_paths = {
+            "floorp": os.path.join(appdata, "Floorp", "Profiles"),
+            "firefox": os.path.join(appdata, "Mozilla", "Firefox", "Profiles"),
+            "chrome": os.path.join(localappdata, "Google", "Chrome", "User Data", "Default", "Cookies"),
+            "edge": os.path.join(localappdata, "Microsoft", "Edge", "User Data", "Default", "Cookies"),
+        }
+
+        for browser in browsers_to_try:
+            try:
+                if browser in ("floorp", "firefox"):
+                    # Firefox-based: find profile dir with cookies.sqlite
+                    profiles_dir = cookie_paths.get(browser, "")
+                    if not os.path.isdir(profiles_dir):
+                        continue
+
+                    # Find the default-release profile
+                    cookie_db = None
+                    for profile_dir in os.listdir(profiles_dir):
+                        candidate = os.path.join(profiles_dir, profile_dir, "cookies.sqlite")
+                        if os.path.exists(candidate):
+                            cookie_db = candidate
+                            if "default-release" in profile_dir:
+                                break  # Prefer default-release
+
+                    if not cookie_db:
+                        continue
+
+                    # Copy DB to temp (browser may have it locked)
+                    tmp = tempfile.mktemp(suffix=".sqlite")
+                    shutil.copy2(cookie_db, tmp)
+
+                    try:
+                        conn = sqlite3.connect(tmp)
+                        cursor = conn.execute(
+                            "SELECT value FROM moz_cookies WHERE host LIKE '%linkedin.com' AND name = 'li_at' LIMIT 1"
+                        )
+                        row = cursor.fetchone()
+                        conn.close()
+                    finally:
+                        os.unlink(tmp)
+
+                    if row and row[0]:
+                        li_at_value = row[0]
+                        self.save_cookies([{
+                            "name": "li_at",
+                            "value": li_at_value,
+                            "domain": ".linkedin.com",
+                            "path": "/",
+                            "httpOnly": True,
+                            "secure": True,
+                            "sameSite": "None",
+                        }])
+                        logger.info(f"LinkedIn cookie imported from {browser}!")
+                        return True
+
+                elif browser in ("chrome", "edge"):
+                    # Chromium-based: cookies are encrypted on Windows (DPAPI)
+                    # For now, log that it requires the cookie method instead
+                    logger.info(f"{browser} cookies are encrypted on Windows — use cookie method or Floorp/Firefox")
+                    continue
+
+            except Exception as e:
+                logger.warning(f"Failed to import from {browser}: {e}")
+                continue
+
+        return False
+
     async def set_cookie_direct(self, li_at_value: str) -> None:
         """Set the li_at cookie directly (user provides it from their browser)."""
         cookies = [
