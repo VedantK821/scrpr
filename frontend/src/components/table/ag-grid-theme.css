@@ -1,0 +1,173 @@
+/* ─── Scrpr AG Grid Dark Theme ─────────────────────────────────────── */
+/* Applied via className="ag-theme-scrpr" on the wrapper div */
+
+.ag-theme-scrpr {
+  --ag-background-color: #09090b;
+  --ag-header-background-color: #111113;
+  --ag-odd-row-background-color: #09090b;
+  --ag-row-hover-color: rgba(39, 39, 42, 0.6);
+  --ag-selected-row-background-color: rgba(6, 182, 212, 0.06);
+  --ag-border-color: #1c1c1f;
+  --ag-header-column-separator-color: #27272a;
+  --ag-cell-horizontal-border: solid #1c1c1f;
+  --ag-foreground-color: #fafafa;
+  --ag-secondary-foreground-color: #a1a1aa;
+  --ag-header-foreground-color: #71717a;
+  --ag-disabled-foreground-color: #52525b;
+  --ag-font-size: 13px;
+  --ag-grid-size: 4px;
+  --ag-list-item-height: 34px;
+  --ag-row-height: 36px;
+  --ag-header-height: 38px;
+  --ag-checkbox-unchecked-color: #3f3f46;
+  --ag-checkbox-checked-color: #06b6d4;
+  --ag-range-selection-border-color: #06b6d4;
+  --ag-range-selection-background-color: rgba(6, 182, 212, 0.07);
+  --ag-input-focus-border-color: #06b6d4;
+  --ag-popup-background-color: #18181b;
+  --ag-menu-background-color: #18181b;
+  --ag-menu-border-color: #3f3f46;
+  --ag-active-color: #06b6d4;
+  --ag-value-change-value-highlight-background-color: rgba(6, 182, 212, 0.12);
+  --ag-row-border-style: solid;
+  --ag-row-border-width: 1px;
+  --ag-row-border-color: #1c1c1f;
+  --ag-side-button-selected-background-color: #27272a;
+  --ag-panel-background-color: #18181b;
+  --ag-column-drop-background-color: #18181b;
+  --ag-filter-tool-panel-background-color: #18181b;
+}
+
+.ag-theme-scrpr .ag-root-wrapper {
+  border: none;
+  border-radius: 0;
+  background: #09090b;
+}
+
+.ag-theme-scrpr .ag-header {
+  background-color: #111113;
+  border-bottom: 1px solid #27272a;
+}
+
+.ag-theme-scrpr .ag-header-cell {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #71717a;
+  text-transform: uppercase;
+}
+
+.ag-theme-scrpr .ag-header-cell-label {
+  padding: 0 4px;
+}
+
+.ag-theme-scrpr .ag-header-cell:hover {
+  background-color: #18181b;
+}
+
+/* Row styling */
+.ag-theme-scrpr .ag-row {
+  border-bottom: 1px solid #1c1c1f;
+  transition: background-color 0.1s ease;
+}
+
+.ag-theme-scrpr .ag-row:hover {
+  background-color: rgba(39, 39, 42, 0.6) !important;
+}
+
+.ag-theme-scrpr .ag-row-selected {
+  border-left: 2px solid #06b6d4 !important;
+  background-color: rgba(6, 182, 212, 0.05) !important;
+}
+
+/* Cell styling */
+.ag-theme-scrpr .ag-cell {
+  display: flex;
+  align-items: center;
+  color: #e4e4e7;
+  border-right: 1px solid #1c1c1f;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.ag-theme-scrpr .ag-cell-focus:not(.ag-cell-range-selected) {
+  border: 1px solid #06b6d4 !important;
+  outline: none;
+}
+
+/* First column (row number) */
+.ag-theme-scrpr .ag-pinned-left-cols-container .ag-cell {
+  color: #3f3f46;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  justify-content: center;
+  border-right: 1px solid #27272a;
+  background: #111113;
+}
+
+/* Scrollbar */
+.ag-theme-scrpr ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.ag-theme-scrpr ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ag-theme-scrpr ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+.ag-theme-scrpr ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Filter/sort icons */
+.ag-theme-scrpr .ag-icon {
+  color: #52525b;
+}
+
+.ag-theme-scrpr .ag-header-cell-sorted-asc .ag-icon,
+.ag-theme-scrpr .ag-header-cell-sorted-desc .ag-icon {
+  color: #06b6d4;
+}
+
+/* Selection checkbox */
+.ag-theme-scrpr .ag-checkbox-input-wrapper::after {
+  color: #06b6d4;
+}
+
+/* Paging */
+.ag-theme-scrpr .ag-paging-panel {
+  background: #111113;
+  border-top: 1px solid #27272a;
+  color: #71717a;
+  font-size: 12px;
+}
+
+/* Menus */
+.ag-theme-scrpr .ag-menu {
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.ag-theme-scrpr .ag-menu-option:hover {
+  background: #27272a;
+}
+
+.ag-theme-scrpr .ag-menu-option-active {
+  background: #27272a;
+  color: #fafafa;
+}
+
+/* No rows overlay */
+.ag-theme-scrpr .ag-overlay-no-rows-wrapper {
+  color: #52525b;
+  font-size: 13px;
+}
+
+/* Loading overlay */
+.ag-theme-scrpr .ag-overlay-loading-wrapper {
+  background: rgba(9, 9, 11, 0.8);
+}

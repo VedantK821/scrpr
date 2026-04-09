@@ -1,10 +1,20 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Space_Mono, DM_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { AppShell } from "@/components/layout/app-shell";
 
-const inter = Inter({
+const spaceMono = Space_Mono({
   subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-space-mono",
+  display: "swap",
+});
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-dm-sans",
   display: "swap",
 });
 
@@ -19,9 +29,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.className}>
-      <body>
-        <Providers>{children}</Providers>
+    <html lang="en" className={`${spaceMono.variable} ${dmSans.variable} dark`}>
+      <body className="antialiased">
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );

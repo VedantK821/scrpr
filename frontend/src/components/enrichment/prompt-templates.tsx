@@ -1,6 +1,12 @@
 "use client";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const PROMPT_TEMPLATES = [
   {
@@ -34,22 +40,28 @@ export function PromptTemplates({ onSelect }: PromptTemplatesProps) {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="sm" className="text-xs border-zinc-700 text-zinc-400 hover:text-zinc-200" />
+          <button className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-mono text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] border border-transparent hover:border-[#3f3f46] transition-all" />
         }
       >
-        Templates
+        Templates ▾
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64 bg-zinc-900 border-zinc-700" side="bottom" align="start">
-        <DropdownMenuLabel className="text-zinc-500">Prompt Templates</DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-zinc-700" />
+      <DropdownMenuContent
+        className="w-72 bg-[#18181b] border-[#3f3f46]"
+        side="bottom"
+        align="start"
+      >
+        <DropdownMenuLabel className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] px-2">
+          Prompt Templates
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="bg-[#27272a]" />
         {PROMPT_TEMPLATES.map((t) => (
           <DropdownMenuItem
             key={t.label}
-            className="flex flex-col items-start gap-0.5 cursor-pointer text-zinc-200 focus:bg-zinc-800 focus:text-zinc-100"
+            className="flex flex-col items-start gap-0.5 cursor-pointer text-[#e4e4e7] focus:bg-[#27272a] focus:text-[#fafafa] py-2"
             onClick={() => onSelect(t.template)}
           >
             <span className="text-sm font-medium">{t.label}</span>
-            <span className="text-xs text-zinc-500 truncate w-full">{t.template}</span>
+            <span className="text-[11px] font-mono text-[#52525b] truncate w-full">{t.template}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -17,22 +17,27 @@ interface KeyboardShortcutsDialogProps {
 export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcutsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm bg-zinc-900 border-zinc-800 text-zinc-100">
+      <DialogContent className="max-w-sm bg-[#18181b] border-[#3f3f46] text-[#fafafa]">
         <DialogHeader>
-          <DialogTitle className="text-zinc-100">Keyboard Shortcuts</DialogTitle>
+          <DialogTitle className="text-[#fafafa] font-mono text-sm tracking-wide">
+            Keyboard Shortcuts
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2 pt-2">
+        <div className="space-y-1 pt-2">
           {SHORTCUTS.map((shortcut) => (
-            <div key={shortcut.description} className="flex items-center justify-between py-1.5 border-b border-zinc-800 last:border-0">
-              <span className="text-sm text-zinc-300">{shortcut.description}</span>
+            <div
+              key={shortcut.description}
+              className="flex items-center justify-between py-2 border-b border-[#27272a] last:border-0"
+            >
+              <span className="text-sm text-[#a1a1aa]">{shortcut.description}</span>
               <div className="flex items-center gap-1">
                 {shortcut.keys.map((key, i) => (
-                  <span key={i}>
-                    <kbd className="inline-flex items-center justify-center rounded border border-zinc-600 bg-zinc-800 px-1.5 py-0.5 text-xs font-mono text-zinc-200 min-w-[1.5rem]">
+                  <span key={i} className="flex items-center gap-1">
+                    <kbd className="inline-flex items-center justify-center rounded-md border border-[#3f3f46] bg-[#27272a] px-1.5 py-0.5 text-xs font-mono text-[#a1a1aa] min-w-[1.5rem]">
                       {key}
                     </kbd>
                     {i < shortcut.keys.length - 1 && (
-                      <span className="text-zinc-600 mx-0.5 text-xs">+</span>
+                      <span className="text-[#3f3f46] text-xs">+</span>
                     )}
                   </span>
                 ))}

@@ -13,8 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Column } from "@/types";
+import { cn } from "@/lib/utils";
 
-// Enrichment column types
 const ENRICHMENT_TYPES = new Set(["agent", "waterfall"]);
 
 function EnrichmentColumnHeader({
@@ -31,10 +31,8 @@ function EnrichmentColumnHeader({
     queryFn: () => api.enrichments.status(tableId, column.id),
     enabled: isRunning,
     refetchInterval: isRunning ? 2000 : false,
-    select: (data) => data,
   });
 
-  // Auto-stop polling when enrichment finishes
   const running = status?.running ?? 0;
   const completed = status?.completed ?? 0;
   const total = status?.total ?? 0;
@@ -44,53 +42,99 @@ function EnrichmentColumnHeader({
     try {
       setIsRunning(true);
       await api.enrichments.trigger(tableId, column.id);
-    } catch (e) {
+    } catch {
       setIsRunning(false);
     }
   };
 
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const typeLabel = column.type === "agent" ? "AI" : "⛓";
+
   return (
-    <div className="flex items-center gap-1 w-full">
-      <span className="truncate flex-1 text-xs font-medium">{column.name}</span>
-      {isRunning && total > 0 && !isFinished ? (
-        <span className="text-xs text-blue-400 whitespace-nowrap">
-          {completed}/{total}
-        </span>
-      ) : null}
+    <div className="flex items-center gap-2 w-full group">
+      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+        <span className="text-[10px] font-mono text-[#52525b]">{typeLabel}</span>
+        <span className="truncate text-xs font-medium text-[#a1a1aa]">{column.name}</span>
+        {isRunning && !isFinished && total > 0 && (
+          <span className="text-[10px] font-mono text-[#06b6d4] whitespace-nowrap">
+            {completed}/{total}
+          </span>
+        )}
+      </div>
       <button
         onClick={handleRun}
         disabled={isRunning && !isFinished}
         title="Run enrichment"
-        className="ml-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+        className={cn(
+          "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono transition-all",
+          isRunning && !isFinished
+            ? "text-[#06b6d4] bg-[#06b6d4]/10 cursor-not-allowed opacity-70"
+            : "text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 hover:shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+        )}
       >
-        {isRunning && !isFinished ? "..." : "▶ Run"}
+        {isRunning && !isFinished ? "..." : "▶"}
       </button>
+
+      {/* Progress bar on header */}
+      {isRunning && !isFinished && total > 0 && (
+        <div className="absolute inset-x-0 bottom-0 h-0.5 bg-[#27272a]">
+          <div
+            className="h-full bg-[#06b6d4] transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-function QuotaDisplay() {
-  const { data: quota } = useQuery({
-    queryKey: ["quota"],
-    queryFn: api.enrichments.quota,
-    staleTime: 60_000,
-  });
+function RunAllButton({ tableId, enrichmentColumns }: { tableId: string; enrichmentColumns: Column[] }) {
+  const [running, setRunning] = useState(false);
 
-  if (!quota) return null;
+  const handleRunAll = async () => {
+    if (enrichmentColumns.length === 0) return;
+    setRunning(true);
+    try {
+      await Promise.all(
+        enrichmentColumns.map((col) => api.enrichments.trigger(tableId, col.id))
+      );
+    } finally {
+      setTimeout(() => setRunning(false), 3000);
+    }
+  };
 
-  const entries = Object.entries(quota);
-  if (entries.length === 0) return null;
+  if (enrichmentColumns.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-3">
-      {entries.map(([source, info]) => (
-        <span key={source} className="text-xs text-zinc-500">
-          {source}:{" "}
-          <span className={info.remaining < 5 ? "text-amber-400" : "text-zinc-400"}>
-            {info.remaining}/{info.limit}
-          </span>
-        </span>
-      ))}
+    <button
+      onClick={handleRunAll}
+      disabled={running}
+      className={cn(
+        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all",
+        running
+          ? "bg-[#06b6d4]/10 text-[#06b6d4] cursor-not-allowed"
+          : "bg-[#06b6d4] text-[#09090b] hover:bg-[#22d3ee]"
+      )}
+      style={running ? undefined : { boxShadow: "0 0 12px rgba(6,182,212,0.25)" }}
+    >
+      <span className="text-xs">{running ? "⏳" : "▶"}</span>
+      {running ? "Running..." : "Run All"}
+    </button>
+  );
+}
+
+function TableStats({ rows, columns }: { rows: unknown[]; columns: unknown[] }) {
+  return (
+    <div className="flex items-center gap-4 text-xs text-[#52525b] font-mono">
+      <span>
+        <span className="text-[#71717a]">{rows.length}</span>{" "}
+        {rows.length === 1 ? "row" : "rows"}
+      </span>
+      <span className="text-[#3f3f46]">·</span>
+      <span>
+        <span className="text-[#71717a]">{columns.length}</span>{" "}
+        {columns.length === 1 ? "col" : "cols"}
+      </span>
     </div>
   );
 }
@@ -110,10 +154,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [isImporting, setIsImporting] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  // Connect WebSocket for real-time cell updates
   useWebSocket(id);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -171,7 +213,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       console.error("CSV import failed:", err);
     } finally {
       setIsImporting(false);
-      // Reset file input so the same file can be re-imported if needed
       if (csvInputRef.current) csvInputRef.current.value = "";
     }
   };
@@ -179,25 +220,67 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const enrichmentColumns = columns.filter((c) => ENRICHMENT_TYPES.has(c.type));
 
   return (
-    <main className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800">
-        <Link href="/" className="text-zinc-400 hover:text-zinc-200 text-sm">
-          ← Back
-        </Link>
-        <h1 className="text-lg font-semibold">{table?.name ?? "Loading..."}</h1>
+    <div className="h-full flex flex-col">
+      {/* ── Header ── */}
+      <div className="border-b border-[#27272a] bg-[#09090b]/60 backdrop-blur-sm shrink-0">
+        {/* Title row */}
+        <div className="flex items-center justify-between gap-4 px-6 pt-5 pb-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-[#fafafa] font-mono truncate">
+              {table?.name ?? (
+                <span className="skeleton h-6 w-40 inline-block rounded" />
+              )}
+            </h1>
+            <TableStats rows={rows} columns={columns} />
+          </div>
+          <RunAllButton tableId={id} enrichmentColumns={enrichmentColumns} />
+        </div>
 
-        <div className="ml-auto flex gap-2 items-center">
-          {/* Enrichment column run buttons */}
-          {enrichmentColumns.map((col) => (
-            <EnrichmentColumnHeader key={col.id} column={col} tableId={id} />
-          ))}
+        {/* Action toolbar */}
+        <div className="flex items-center gap-2 px-6 pb-3 flex-wrap">
+          {/* Column button */}
+          <Dialog open={colDialogOpen} onOpenChange={setColDialogOpen}>
+            <DialogTrigger
+              render={
+                <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all" />
+              }
+            >
+              + Column
+            </DialogTrigger>
+            <DialogContent className="bg-[#18181b] border-[#3f3f46] text-[#fafafa]">
+              <DialogHeader>
+                <DialogTitle className="text-[#fafafa] font-mono">Add Column</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <Label className="text-[#a1a1aa] text-xs">Column name</Label>
+                  <Input
+                    value={colName}
+                    onChange={(e) => setColName(e.target.value)}
+                    placeholder="e.g. Company"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
+                    className="mt-1.5 bg-[#09090b] border-[#3f3f46] text-[#fafafa] placeholder:text-[#52525b] focus-visible:border-[#06b6d4] focus-visible:ring-[#06b6d4]/20"
+                  />
+                </div>
+                <Button
+                  onClick={handleAddColumn}
+                  className="w-full bg-[#06b6d4] hover:bg-[#22d3ee] text-[#09090b] font-semibold border-0"
+                >
+                  Add Column
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
-          {/* Email composer */}
-          <Link href={`/table/${id}/emails`}>
-            <Button variant="outline" size="sm">Email</Button>
-          </Link>
+          {/* Row */}
+          <button
+            onClick={handleAddRow}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
+          >
+            + Row
+          </button>
 
-          {/* CSV import/export */}
+          {/* Import */}
           <input
             ref={csvInputRef}
             type="file"
@@ -205,70 +288,71 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             className="hidden"
             onChange={handleImportCSV}
           />
-          <Button
-            variant="outline"
-            size="sm"
+          <button
             onClick={() => csvInputRef.current?.click()}
             disabled={isImporting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all disabled:opacity-50"
           >
-            {isImporting ? "Importing..." : "Import CSV"}
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportCSV}>
-            Export CSV
-          </Button>
+            <span>⬆</span>
+            {isImporting ? "Importing..." : "Import"}
+          </button>
 
-          {/* Enrich Data panel trigger */}
-          <Button
-            variant="outline"
-            size="sm"
+          {/* Export */}
+          <button
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
+          >
+            <span>⬇</span>
+            Export
+          </button>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Enrich Data */}
+          <button
             onClick={() => setEnrichPanelOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-[#06b6d4] bg-[#06b6d4]/10 hover:bg-[#06b6d4]/20 border border-[#06b6d4]/20 hover:border-[#06b6d4]/40 transition-all"
           >
             + Enrich Data
-          </Button>
+          </button>
 
-          {/* Add plain text column */}
-          <Dialog open={colDialogOpen} onOpenChange={setColDialogOpen}>
-            <DialogTrigger render={<Button variant="outline" size="sm" />}>+ Column</DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Column</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div>
-                  <Label>Column name</Label>
-                  <Input
-                    value={colName}
-                    onChange={(e) => setColName(e.target.value)}
-                    placeholder="e.g. Company"
-                    onKeyDown={(e) => e.key === "Enter" && handleAddColumn()}
-                  />
-                </div>
-                <Button onClick={handleAddColumn} className="w-full">
-                  Add
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* Email */}
+          <Link
+            href={`/table/${id}/emails`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-[#a1a1aa] bg-[#27272a] hover:bg-[#3f3f46] border border-[#3f3f46] hover:border-[#52525b] transition-all"
+          >
+            <span>📧</span>
+            Email
+          </Link>
 
-          <Button variant="outline" size="sm" onClick={handleAddRow}>
-            + Row
-          </Button>
+          {/* Shortcuts help */}
+          <button
+            onClick={() => setShortcutsOpen(true)}
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md text-xs font-mono text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] border border-transparent hover:border-[#3f3f46] transition-all"
+            title="Keyboard shortcuts (?)"
+          >
+            ?
+          </button>
         </div>
       </div>
 
+      {/* ── Data table ── */}
       <div className="flex-1 min-h-0">
-        <DataTable columns={columns} rows={rows} onCellEdit={handleCellEdit} />
+        {columns.length === 0 && rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-8 card-animate">
+            <div className="w-16 h-16 rounded-xl border-2 border-dashed border-[#3f3f46] flex items-center justify-center mb-4 bg-[#18181b]">
+              <span className="text-2xl opacity-50">◫</span>
+            </div>
+            <h3 className="text-base font-semibold text-[#a1a1aa] mb-1">Empty table</h3>
+            <p className="text-[#52525b] text-sm">Add columns and rows to get started, or import a CSV</p>
+          </div>
+        ) : (
+          <DataTable columns={columns} rows={rows} onCellEdit={handleCellEdit} />
+        )}
       </div>
 
-      <div className="flex items-center gap-4 px-4 py-2 border-t border-zinc-800 text-sm text-zinc-500">
-        <span>Rows: {rows.length}</span>
-        <span>Columns: {columns.length}</span>
-        <div className="ml-auto">
-          <QuotaDisplay />
-        </div>
-      </div>
-
-      {/* Slide-out enrichment panel */}
+      {/* Enrichment panel */}
       <EnrichmentPanel
         open={enrichPanelOpen}
         onClose={() => setEnrichPanelOpen(false)}
@@ -277,6 +361,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
       {/* Keyboard shortcuts dialog */}
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-    </main>
+    </div>
   );
 }
