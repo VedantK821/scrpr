@@ -129,6 +129,66 @@ async def enrichment_status(
     )
 
 
+@router.post("/tables/{table_id}/auto-enrich-columns")
+async def auto_create_enrichment_columns(table_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Auto-create Key Contact + Email enrichment columns for an existing table."""
+    table = await db.get(Table, table_id)
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    # Get existing columns
+    result = await db.execute(select(Column).where(Column.table_id == table_id).order_by(Column.position))
+    existing = result.scalars().all()
+    existing_names = {c.name.lower() for c in existing}
+    next_pos = len(existing)
+
+    # Find the company/name column to reference in prompts
+    company_col = next(
+        (c for c in existing if c.name.lower() in ("company", "name", "company name", "organisation")),
+        existing[0] if existing else None,
+    )
+    if not company_col:
+        raise HTTPException(status_code=400, detail="Table has no columns to reference")
+
+    created = []
+
+    # Add Key Contact column if not exists
+    if not any(n in existing_names for n in ("key contact", "contact", "hiring contact", "recruiter")):
+        col = Column(
+            table_id=table_id,
+            name="Key Contact",
+            type=ColumnType.AGENT,
+            position=next_pos,
+            config={
+                "prompt": f"Find the most relevant contact person at /{company_col.name}/. Return their full name, title, and LinkedIn URL."
+            },
+        )
+        db.add(col)
+        await db.flush()
+        created.append("Key Contact")
+        next_pos += 1
+
+    # Add Email column if not exists
+    if not any(n in existing_names for n in ("email", "email address", "work email")):
+        contact_ref = "Key Contact" if "key contact" not in existing_names else "Recruiter"
+        col = Column(
+            table_id=table_id,
+            name="Email",
+            type=ColumnType.WATERFALL,
+            position=next_pos,
+            config={
+                "prompt": f"Find email for /{contact_ref}/ at /{company_col.name}/",
+                "sources": ["email_pattern", "ai_agent"],
+            },
+        )
+        db.add(col)
+        await db.flush()
+        created.append("Email")
+
+    await db.commit()
+    return {"created": created, "message": f"Added {len(created)} enrichment column(s)" if created else "Enrichment columns already exist"}
+
+
 @router.get("/quota")
 async def get_quota():
     """Get current quota usage for all sources."""

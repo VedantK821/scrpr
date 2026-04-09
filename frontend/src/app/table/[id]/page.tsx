@@ -667,7 +667,25 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
           <ToolbarDivider />
 
-          {/* Enrich Data */}
+          {/* Quick Setup — auto-creates Key Contact + Email columns */}
+          {enrichmentColumns.length === 0 && rows.length > 0 && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await api.enrichments.autoCreateColumns(id);
+                  await queryClient.invalidateQueries({ queryKey: ["columns", id] });
+                  success(res.message);
+                } catch (err) {
+                  error(err instanceof Error ? err.message : "Failed to create enrichment columns");
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all"
+            >
+              <span>⚡</span> Quick Setup
+            </button>
+          )}
+
+          {/* Enrich Data (manual) */}
           <button
             onClick={() => setEnrichPanelOpen(true)}
             className={toolbarBtnEnrich}
@@ -712,6 +730,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           setEnrichPanelOpen(true);
         }}
         onRunAll={handleRunAll}
+        onQuickSetup={async () => {
+          try {
+            const res = await api.enrichments.autoCreateColumns(id);
+            await queryClient.invalidateQueries({ queryKey: ["columns", id] });
+            success(res.message);
+          } catch (err) {
+            error(err instanceof Error ? err.message : "Failed");
+          }
+        }}
       />
 
       {/* ── Data table ── */}

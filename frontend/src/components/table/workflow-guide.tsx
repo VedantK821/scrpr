@@ -16,6 +16,7 @@ interface WorkflowGuideProps {
   onAddRow: () => void;
   onOpenEnrichment: (type?: "agent" | "waterfall") => void;
   onRunAll: () => void;
+  onQuickSetup?: () => Promise<void>;
 }
 
 function detectStep(columns: Column[], rows: Row[]): WorkflowStep {
@@ -106,6 +107,7 @@ export function WorkflowGuide({
   onImportCSV,
   onAddRow,
   onOpenEnrichment,
+  onQuickSetup,
   onRunAll,
 }: WorkflowGuideProps) {
   const router = useRouter();
@@ -329,21 +331,27 @@ export function WorkflowGuide({
 
               {currentStep === 2 && (
                 <>
+                  {onQuickSetup && (
+                    <button
+                      onClick={onQuickSetup}
+                      className="guide-action-btn flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                    >
+                      <span>⚡</span> Quick Setup (Key Contact + Email)
+                    </button>
+                  )}
+                  <span className="text-[10px] text-[#52525b] mx-1">or manually:</span>
                   <button
                     onClick={() => onOpenEnrichment("agent")}
                     className="guide-action-btn guide-action-btn--cyan"
                   >
-                    <span>🤖</span> + AI Agent Column
+                    <span>🤖</span> + AI Agent
                   </button>
                   <button
                     onClick={() => onOpenEnrichment("waterfall")}
                     className="guide-action-btn guide-action-btn--cyan"
                   >
-                    <span>⛓</span> + Waterfall Column
+                    <span>⛓</span> + Waterfall
                   </button>
-                  <span className="text-[10px] font-mono text-[#3f3f46] ml-1">
-                    {regularCols.length} text col{regularCols.length !== 1 ? "s" : ""}, {enrichCols.length} enrichment col{enrichCols.length !== 1 ? "s" : ""}
-                  </span>
                 </>
               )}
 
