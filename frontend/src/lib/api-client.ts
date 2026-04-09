@@ -95,7 +95,7 @@ export const api = {
     }),
   },
   find: {
-    buildList: (data: { criteria: string; target_count: number; entity_type: string; table_name?: string }) =>
+    buildList: (data: { criteria: string; target_count: number; entity_type: string; country?: string; table_name?: string }) =>
       request<import("@/types").FindResponse>("/find", {
         method: "POST", body: JSON.stringify(data),
       }),

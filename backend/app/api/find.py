@@ -18,6 +18,7 @@ class FindRequest(BaseModel):
     criteria: str  # "Top 100 MNCs in India that hire from campus"
     target_count: int = 25
     entity_type: str = "companies"  # "companies" or "people"
+    country: str = ""  # "India", "USA", etc. — filters results
     table_name: str | None = None  # Optional — auto-generates if not provided
 
 
@@ -75,9 +76,13 @@ async def find_and_create_table(body: FindRequest, db: AsyncSession = Depends(ge
 
     builder = ListBuilder()
 
-    # Build the list
+    # Build the list — append country to criteria if provided
+    criteria = body.criteria
+    if body.country:
+        criteria = f"{criteria}. COUNTRY FILTER: Only include {body.entity_type} based in or operating in {body.country}."
+
     result = await builder.build_list(
-        criteria=body.criteria,
+        criteria=criteria,
         target_count=body.target_count,
         entity_type=body.entity_type,
     )

@@ -73,6 +73,7 @@ export default function FindPage() {
   const [criteria, setCriteria] = useState("");
   const [entityType, setEntityType] = useState<"companies" | "people">("companies");
   const [targetCount, setTargetCount] = useState<number>(25);
+  const [country, setCountry] = useState("India");
   const [tableName, setTableName] = useState("");
   const [result, setResult] = useState<FindResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +99,7 @@ export default function FindPage() {
         criteria: criteria.trim(),
         target_count: targetCount,
         entity_type: entityType,
+        country: country || undefined,
         table_name: tableName.trim() || undefined,
       }),
     onSuccess: (data) => {
@@ -221,7 +223,26 @@ export default function FindPage() {
           </div>
         </div>
 
-        {/* Entity type + Target count */}
+        {/* Country + Entity type + Target count */}
+        <div className="space-y-2 mb-4">
+          <Label className="text-[#a1a1aa] text-xs font-mono uppercase tracking-wider">Country Filter</Label>
+          <div className="flex rounded-lg border border-[#3f3f46] overflow-hidden bg-[#09090b]">
+            {["India", "USA", "UK", "Global"].map((c) => (
+              <button
+                key={c}
+                onClick={() => setCountry(c === "Global" ? "" : c)}
+                className={cn(
+                  "flex-1 py-1.5 text-[13px] font-mono transition-all border-r border-[#27272a] last:border-r-0",
+                  (c === "Global" ? !country : country === c)
+                    ? "bg-[#06b6d4]/15 text-[#06b6d4]"
+                    : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a]/50"
+                )}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           {/* Entity type toggle */}
           <div className="space-y-2">
