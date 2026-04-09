@@ -49,4 +49,37 @@ export const api = {
         method: "PATCH", body: JSON.stringify(data),
       }),
   },
+  enrichments: {
+    trigger: (tableId: string, columnId: string, rowIds?: string[]) =>
+      request<{ triggered: number; results: any[] }>(`/tables/${tableId}/columns/${columnId}/enrich`, {
+        method: "POST",
+        body: JSON.stringify(rowIds ? { row_ids: rowIds } : {}),
+      }),
+    status: (tableId: string, columnId: string) =>
+      request<{ total: number; completed: number; found: number; not_found: number; errors: number; running: number }>(
+        `/tables/${tableId}/columns/${columnId}/enrich/status`
+      ),
+    quota: () => request<Record<string, { used: number; limit: number; remaining: number }>>("/quota"),
+  },
+  csv: {
+    export: async (tableId: string, columns: import("@/types").Column[], rows: import("@/types").Row[]) => {
+      const headers = columns.map((c) => c.name);
+      const csvRows = rows.map((row) => {
+        return columns.map((col) => {
+          const cell = row.cells.find((c) => c.column_id === col.id);
+          return cell?.value ?? "";
+        });
+      });
+      const csv = [
+        headers.join(","),
+        ...csvRows.map((r) => r.map((v) => `"${(v ?? "").replace(/"/g, '""')}"`).join(",")),
+      ].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `scrpr-export.csv`;
+      a.click();
+    },
+  },
 };
