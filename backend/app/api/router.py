@@ -5,6 +5,7 @@ from app.api.enrichments import router as enrichments_router
 from app.api.emails import router as emails_router
 from app.api.csv_routes import router as csv_router
 from app.api.linkedin import router as linkedin_router
+from app.api.find import router as find_router
 
 api_router = APIRouter()
 
@@ -18,3 +19,4 @@ api_router.include_router(ws_router, tags=["websocket"])
 api_router.include_router(emails_router, tags=["emails"])
 api_router.include_router(csv_router, tags=["csv"])
 api_router.include_router(linkedin_router, tags=["linkedin"])
+api_router.include_router(find_router, tags=["find"])
