@@ -430,6 +430,7 @@ export default function EmailsPage({ params }: { params: Promise<{ id: string }>
         subject_template: subjectTemplate,
         body_template: bodyTemplate,
         personalization_level: personalizationLevel,
+        ...(aiInstructions.trim() ? { ai_instructions: aiInstructions.trim() } : {}),
       });
       setDrafts(generated);
       setSelectedDraftIds(new Set(generated.filter((d) => d.status !== "skipped").map((d) => d.id)));
