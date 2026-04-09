@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PromptTemplates } from "@/components/enrichment/prompt-templates";
@@ -9,6 +9,7 @@ interface EnrichmentPanelProps {
   open: boolean;
   onClose: () => void;
   onSave: (config: { name: string; type: "agent" | "waterfall"; config: Record<string, unknown> }) => void;
+  initialType?: "agent" | "waterfall";
 }
 
 const ENRICHMENT_SOURCES = [
@@ -139,9 +140,14 @@ function PromptDisplay({ value }: { value: string }) {
   );
 }
 
-export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps) {
+export function EnrichmentPanel({ open, onClose, onSave, initialType }: EnrichmentPanelProps) {
   const [step, setStep] = useState<"choose" | "configure">("choose");
-  const [selectedType, setSelectedType] = useState<"agent" | "waterfall">("agent");
+  const [selectedType, setSelectedType] = useState<"agent" | "waterfall">(initialType ?? "agent");
+
+  // Sync initialType when it changes (e.g. guide triggers with a specific type)
+  useEffect(() => {
+    if (open && initialType) setSelectedType(initialType);
+  }, [open, initialType]);
   const [selectedSources, setSelectedSources] = useState<string[]>(["ai_agent"]);
   const [columnName, setColumnName] = useState("");
   const [prompt, setPrompt] = useState("");

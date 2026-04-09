@@ -13,6 +13,7 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api-client";
 import { DataTable } from "@/components/table/data-table";
 import { EnrichmentPanel } from "@/components/enrichment/enrichment-panel";
+import { WorkflowGuide } from "@/components/table/workflow-guide";
 import { KeyboardShortcutsDialog } from "@/components/table/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 import {
@@ -379,6 +380,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [colType, setColType] = useState("text");
   const [colDialogOpen, setColDialogOpen] = useState(false);
   const [enrichPanelOpen, setEnrichPanelOpen] = useState(false);
+  const [enrichPanelType, setEnrichPanelType] = useState<"agent" | "waterfall">("agent");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
@@ -434,6 +436,18 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     [createColumn],
   );
 
+  const enrichmentColumns = columns.filter((c) => ENRICHMENT_TYPES.has(c.type));
+  const regularColumns = columns.filter((c) => !ENRICHMENT_TYPES.has(c.type));
+
+  const handleRunAll = async () => {
+    if (enrichmentColumns.length === 0) return;
+    try {
+      await Promise.all(enrichmentColumns.map((col) => api.enrichments.trigger(id, col.id)));
+    } catch (err) {
+      error(err instanceof Error ? err.message : "Failed to run enrichments");
+    }
+  };
+
   const handleExportCSV = () => {
     api.csv.exportServer(id);
   };
@@ -468,9 +482,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       setDeletingRows(false);
     }
   };
-
-  const enrichmentColumns = columns.filter((c) => ENRICHMENT_TYPES.has(c.type));
-  const regularColumns = columns.filter((c) => !ENRICHMENT_TYPES.has(c.type));
 
   return (
     <div className="h-full flex flex-col">
@@ -628,6 +639,20 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       </div>
 
+      {/* ── Workflow guide ── */}
+      <WorkflowGuide
+        tableId={id}
+        columns={columns}
+        rows={rows}
+        onImportCSV={() => csvInputRef.current?.click()}
+        onAddRow={handleAddRow}
+        onOpenEnrichment={(type) => {
+          setEnrichPanelType(type ?? "agent");
+          setEnrichPanelOpen(true);
+        }}
+        onRunAll={handleRunAll}
+      />
+
       {/* ── Data table ── */}
       <div className="flex-1 min-h-0 relative">
         {/* Subtle inset top border */}
@@ -662,6 +687,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         open={enrichPanelOpen}
         onClose={() => setEnrichPanelOpen(false)}
         onSave={handleEnrichmentSave}
+        initialType={enrichPanelType}
       />
 
       {/* Keyboard shortcuts dialog */}
