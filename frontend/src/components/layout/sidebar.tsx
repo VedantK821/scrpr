@@ -1,31 +1,43 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTables, useCreateTable } from "@/hooks/use-api";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-function LinkedInDot() {
-  const { data } = useQuery({
-    queryKey: ["linkedin-status"],
-    queryFn: api.linkedin.status,
-    staleTime: 60_000,
-  });
-  const connected = data?.connected ?? false;
-  return (
-    <span
-      className={cn("w-1.5 h-1.5 rounded-full shrink-0", connected ? "bg-emerald-400" : "bg-[#3f3f46]")}
-      style={connected ? { boxShadow: "0 0 5px rgba(52,211,153,0.7)" } : undefined}
-      title={connected ? "LinkedIn: Connected" : "LinkedIn: Not Connected"}
-    />
-  );
-}
+const PROMPT_TEMPLATES = [
+  {
+    label: "Find Email",
+    prompt: "Find the professional email address for /Name/ who works at /Company/. Return only the email.",
+  },
+  {
+    label: "LinkedIn URL",
+    prompt: "Find the LinkedIn profile URL for /Name/ at /Company/. Return only the URL.",
+  },
+  {
+    label: "Company Summary",
+    prompt: "Write a 2-sentence summary of what /Company/ does. Be factual and concise.",
+  },
+  {
+    label: "Job Title Lookup",
+    prompt: "Find the current job title of /Name/ at /Company/. Return only the title.",
+  },
+  {
+    label: "HQ Location",
+    prompt: "Find the headquarters location (city, country) for /Company/. Return only the location.",
+  },
+  {
+    label: "Funding Stage",
+    prompt: "What is the latest funding stage and amount for /Company/? Return a short answer.",
+  },
+];
 
 function QuotaMini() {
   const { data: quota } = useQuery({
@@ -87,8 +99,13 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { data } = useTables();
   const createTable = useCreateTable();
+  const queryClient = useQueryClient();
+  const { success, error, info } = useToast();
   const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   // Extract active table id from URL
   const activeTableId = pathname?.match(/\/table\/([^/]+)/)?.[1] ?? null;
@@ -98,6 +115,39 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
     await createTable.mutateAsync(name.trim());
     setName("");
     setOpen(false);
+  };
+
+  const handleImportCSV = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!activeTableId) {
+        info("Open a table first to import CSV");
+        if (csvInputRef.current) csvInputRef.current.value = "";
+        return;
+      }
+      setIsImporting(true);
+      try {
+        const result = await api.csv.import(activeTableId, file);
+        await queryClient.invalidateQueries({ queryKey: ["columns", activeTableId] });
+        await queryClient.invalidateQueries({ queryKey: ["rows", activeTableId] });
+        success(`Imported ${result.rows_imported} rows`);
+      } catch (err) {
+        error(err instanceof Error ? err.message : "CSV import failed");
+      } finally {
+        setIsImporting(false);
+        if (csvInputRef.current) csvInputRef.current.value = "";
+      }
+    },
+    [activeTableId, queryClient, success, error, info],
+  );
+
+  const handleImportClick = () => {
+    if (!activeTableId) {
+      info("Open a table first to import CSV");
+      return;
+    }
+    csvInputRef.current?.click();
   };
 
   return (
@@ -217,55 +267,68 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         <div className="px-3">
           <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Quick Actions</p>
           <div className="space-y-0.5">
-            <Link
-              href="/find"
-              className={cn(
-                "flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] transition-all duration-200 text-left border",
-                pathname === "/find"
-                  ? "bg-[#06b6d4]/10 text-[#06b6d4] border-[#06b6d4]/20"
-                  : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] border-transparent hover:border-[#27272a]"
-              )}
+            {/* Import CSV — works on active table */}
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportCSV}
+            />
+            <button
+              onClick={handleImportClick}
+              disabled={isImporting}
+              className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left disabled:opacity-50"
             >
-              <span className="text-sm">⌕</span>
-              <span>Find</span>
-            </Link>
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]">
               <span className="text-sm">⬆</span>
-              <span>Import CSV</span>
-            </button>
-            <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]">
-              <span className="text-sm">◧</span>
-              <span>Templates</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Gradient Divider */}
-        <div className="mx-3 my-2 gradient-divider" />
-
-        {/* LinkedIn + Settings */}
-        <div className="px-3">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-[#52525b] mb-2 px-1">Account</p>
-          <div className="space-y-0.5">
-            <Link
-              href="/settings"
-              className={cn(
-                "flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] transition-all duration-200 text-left border",
-                pathname === "/settings"
-                  ? "bg-[#06b6d4]/10 text-[#06b6d4] border-[#06b6d4]/20"
-                  : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] border-transparent hover:border-[#27272a]"
+              <span>{isImporting ? "Importing..." : "Import CSV"}</span>
+              {!activeTableId && (
+                <span className="ml-auto text-[10px] text-[#3f3f46]">needs table</span>
               )}
-            >
-              <span className="text-sm">⚙</span>
-              <span className="flex-1">Settings</span>
-            </Link>
-            <Link
-              href="/settings"
-              className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left border border-transparent hover:border-[#27272a]"
-            >
-              <LinkedInDot />
-              <span className="flex-1">LinkedIn</span>
-            </Link>
+            </button>
+
+            {/* Templates */}
+            <Dialog open={templatesOpen} onOpenChange={setTemplatesOpen}>
+              <DialogTrigger
+                render={
+                  <button className="flex items-center gap-2 px-2 py-1.5 w-full rounded-md text-[13px] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#27272a] transition-all duration-200 text-left" />
+                }
+              >
+                <span className="text-sm">◧</span>
+                <span>Templates</span>
+              </DialogTrigger>
+              <DialogContent className="bg-[#18181b] border-[#3f3f46] text-[#fafafa] sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-[#fafafa] font-mono">Prompt Templates</DialogTitle>
+                </DialogHeader>
+                <p className="text-xs text-[#71717a] -mt-1">
+                  Copy a template and paste it into an AI enrichment column. Use{" "}
+                  <code className="text-[#06b6d4] bg-[#27272a] px-1 rounded">/ColumnName/</code> to reference data.
+                </p>
+                <div className="space-y-2 mt-1">
+                  {PROMPT_TEMPLATES.map((tpl) => (
+                    <div
+                      key={tpl.label}
+                      className="rounded-lg border border-[#27272a] bg-[#09090b] p-3 hover:border-[#3f3f46] transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-semibold text-[#a1a1aa]">{tpl.label}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(tpl.prompt);
+                            success("Copied to clipboard");
+                          }}
+                          className="text-[10px] text-[#52525b] hover:text-[#06b6d4] transition-colors px-1.5 py-0.5 rounded hover:bg-[#06b6d4]/10 font-mono"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[#71717a] font-mono leading-relaxed">{tpl.prompt}</p>
+                    </div>
+                  ))}
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
       </div>
