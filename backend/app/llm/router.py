@@ -18,7 +18,7 @@ class LLMRouter:
 
     def _get_chain(self, complexity: TaskComplexity) -> list[ProviderConfig]:
         local = [p for p in self.providers if p.name == "ollama"]
-        api = [p for p in self.providers if p.name != "ollama"]
+        api = [p for p in self.providers if p.name not in ("ollama",)]
         if complexity == TaskComplexity.SIMPLE:
             return local + api
         elif complexity == TaskComplexity.MODERATE:
@@ -51,6 +51,7 @@ class LLMRouter:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     response_format=response_format,
+                    complexity=complexity,
                 )
                 return result
             except Exception as e:
@@ -69,6 +70,7 @@ class LLMRouter:
         temperature: float = 0.1,
         max_tokens: int = 2000,
         response_format: dict | None = None,
+        complexity: TaskComplexity = TaskComplexity.MODERATE,
     ) -> str:
         messages = []
         if system_prompt:
@@ -86,5 +88,10 @@ class LLMRouter:
             kwargs["api_key"] = api_key
         if response_format:
             kwargs["response_format"] = response_format
+        # For qwen3 on Ollama: disable thinking for SIMPLE tasks (search queries, yes/no),
+        # keep thinking ON for COMPLEX tasks (extraction, evaluation, list building) where quality matters
+        if provider in ("ollama", "ollama_heavy") and "qwen" in model.lower():
+            if complexity == TaskComplexity.SIMPLE:
+                kwargs["extra_body"] = {"options": {"think": False}}
         response = await acompletion(**kwargs)
         return response.choices[0].message.content

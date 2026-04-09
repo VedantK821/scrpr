@@ -82,23 +82,42 @@ class ListBuilder:
         }
 
     async def _generate_initial_list(self, criteria: str, target_count: int, entity_type: str) -> list[dict]:
-        prompt = (
-            f"Search criteria: {criteria}\n"
-            f"Entity type: {entity_type}\n"
-            f"Target count: {target_count}\n\n"
-            f"Generate a list of {target_count} {entity_type} matching this criteria. "
-            f"Include as many relevant fields as possible (name, domain, industry, location, etc.)."
-        )
+        # Break into batches of 10 to keep prompts short and reliable
+        all_entities = []
+        batch_size = 10
+        batches_needed = (target_count + batch_size - 1) // batch_size
 
-        response = await self.llm.complete(
-            prompt,
-            system_prompt=LIST_BUILDER_SYSTEM_PROMPT,
-            complexity=TaskComplexity.COMPLEX,
-            temperature=0.3,
-            max_tokens=4000,
-        )
+        for batch_num in range(batches_needed):
+            already_found = [e.get("name", "") for e in all_entities]
+            exclude_str = f"\nDo NOT include these (already found): {', '.join(already_found)}" if already_found else ""
 
-        return self._parse_list(response)
+            prompt = (
+                f"List {batch_size} {entity_type} matching: {criteria[:500]}\n"
+                f"{exclude_str}\n\n"
+                f"Return ONLY a JSON array with objects having: name, domain, industry, headquarters fields."
+            )
+
+            try:
+                response = await self.llm.complete(
+                    prompt,
+                    system_prompt=LIST_BUILDER_SYSTEM_PROMPT,
+                    complexity=TaskComplexity.COMPLEX,
+                    temperature=0.3 + (batch_num * 0.1),  # Increase temperature for diversity
+                    max_tokens=3000,
+                )
+                batch = self._parse_list(response)
+                if batch:
+                    all_entities.extend(batch)
+                    logger.info(f"Batch {batch_num + 1}/{batches_needed}: got {len(batch)} entities (total: {len(all_entities)})")
+                else:
+                    logger.warning(f"Batch {batch_num + 1} returned no entities")
+            except Exception as e:
+                logger.error(f"Batch {batch_num + 1} failed: {e}")
+
+            if len(all_entities) >= target_count:
+                break
+
+        return all_entities
 
     async def _generate_search_queries(self, criteria: str, entity_type: str) -> list[str]:
         prompt = (

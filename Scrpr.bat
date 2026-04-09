@@ -17,7 +17,8 @@ cd /d "%~dp0"
 :: Start Ollama if not running
 curl -s http://localhost:11434/api/tags >nul 2>&1
 if errorlevel 1 (
-    echo   [1/3] Starting Ollama...
+    echo   [1/3] Starting Ollama (NVIDIA GPU)...
+    set CUDA_VISIBLE_DEVICES=0
     start /min "" ollama serve
     timeout /t 3 /nobreak >nul
 ) else (
