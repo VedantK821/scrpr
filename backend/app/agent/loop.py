@@ -9,6 +9,7 @@ from app.agent.evaluator import AgentEvaluator
 from app.agent.extractor import AgentExtractor
 from app.agent.planner import AgentPlanner
 from app.scraper.engine import ScrapingEngine
+from app.scraper.linkedin_scraper import LinkedInScraper
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,23 @@ class AgentLoop:
                                 logger.info(f"Relevant page found: {url}")
                     except Exception as e:
                         logger.warning(f"Failed to scrape {url}: {e}")
+
+            # Also search LinkedIn directly if the session is available
+            linkedin = LinkedInScraper()
+            if linkedin.is_available():
+                li_query = f"{context.get('company', '')} {prompt}"
+                try:
+                    li_results = await linkedin.search_people(li_query[:100], max_results=3)
+                    if li_results:
+                        for person in li_results:
+                            text = f"LinkedIn Profile: {person['name']} - {person['title']} - {person['linkedin_url']}"
+                            all_relevant_texts.append(text)
+                            loop_relevant_texts.append(text)
+                            all_relevant_summaries.append(
+                                f"Found {person['name']} ({person['title']}) on LinkedIn"
+                            )
+                except Exception as e:
+                    logger.warning(f"LinkedIn search failed in agent loop: {e}")
 
             # Extract if we have relevant pages
             if loop_relevant_texts:

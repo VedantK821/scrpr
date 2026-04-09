@@ -3,12 +3,14 @@ from app.sources.ai_agent import AIAgentSource
 from app.sources.hunter import HunterSource
 from app.sources.apollo import ApolloSource
 from app.sources.email_pattern import EmailPatternSource
+from app.sources.linkedin import LinkedInSource
 
 _SOURCES: dict[str, type[EnrichmentSource]] = {
     "ai_agent": AIAgentSource,
     "hunter": HunterSource,
     "apollo": ApolloSource,
     "email_pattern": EmailPatternSource,
+    "linkedin": LinkedInSource,
 }
 
 
@@ -28,6 +30,7 @@ __all__ = [
     "HunterSource",
     "ApolloSource",
     "EmailPatternSource",
+    "LinkedInSource",
     "get_source_by_name",
     "get_all_sources",
 ]

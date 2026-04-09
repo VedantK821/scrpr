@@ -5,6 +5,7 @@ from .api_layer import ApiScraper
 from .browser_layer import BrowserScraper
 from .http_layer import HttpScraper, ScrapeResult
 from .stealth import get_random_delay
+from .linkedin_scraper import LinkedInScraper
 
 
 class ScrapingEngine:
@@ -12,6 +13,7 @@ class ScrapingEngine:
     3-layer scraping engine that tries multiple methods to fetch web content.
 
     Layers: HTTP -> Browser -> API
+    For LinkedIn URLs: uses the LinkedIn scraper directly (requires saved session).
     """
 
     def __init__(self):
@@ -19,6 +21,7 @@ class ScrapingEngine:
         self.http = HttpScraper()
         self.browser = BrowserScraper()
         self.api = ApiScraper()
+        self.linkedin = LinkedInScraper()
 
     async def scrape(
         self,
@@ -38,6 +41,12 @@ class ScrapingEngine:
         Returns:
             ScrapeResult from the first successful layer or failure from API layer
         """
+        # For LinkedIn URLs, use the LinkedIn scraper directly (generic HTTP always fails)
+        if "linkedin.com" in url and self.linkedin.is_available():
+            result = await self.linkedin.scrape_profile(url)
+            if result.success:
+                return result
+
         layers = []
 
         if not skip_http:

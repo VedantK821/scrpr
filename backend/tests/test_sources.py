@@ -729,10 +729,10 @@ class TestSourcesRegistry:
         source = get_source_by_name("does_not_exist")
         assert source is None
 
-    def test_get_all_sources_returns_all_four(self):
+    def test_get_all_sources_returns_all_five(self):
         sources = get_all_sources()
         names = {s.name for s in sources}
-        assert names == {"ai_agent", "hunter", "apollo", "email_pattern"}
+        assert names == {"ai_agent", "hunter", "apollo", "email_pattern", "linkedin"}
 
     def test_get_source_by_name_returns_new_instance_each_call(self):
         s1 = get_source_by_name("hunter")
