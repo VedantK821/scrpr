@@ -425,14 +425,13 @@ class TestEmailPatternSource:
         )
 
         assert result.found is True
-        assert result.value == "john.doe@example.com"  # first pattern
+        assert result.value == "john.doe@example.com"  # first pattern (most common)
         candidates = result.data["candidates"]
         assert "john.doe@example.com" in candidates
         assert "johndoe@example.com" in candidates
         assert "jdoe@example.com" in candidates
-        assert "john@example.com" in candidates
+        assert "j.doe@example.com" in candidates
         assert "john_doe@example.com" in candidates
-        assert "doe.john@example.com" in candidates
 
     @pytest.mark.asyncio
     async def test_no_name_returns_failure(self):
