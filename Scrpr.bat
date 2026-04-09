@@ -2,10 +2,10 @@
 title Scrpr - Starting...
 color 0B
 echo.
-echo    ____   ____ ____  ____  ____
-echo   / ___) / ___(  _ \(  _ \(  _ \
-echo   \___ \( (__  )   / )___/ )   /
-echo   (____/ \___)(_)\_)(__)  (_)\_)
+echo    ___  ___ _ __ _ __  _ __
+echo   / __|/ __^| '__^| '_ \^| '__^|
+echo   \__ \ (__^| ^|  ^| ___/^| ^|
+echo   ^|___/\___^|_^|  ^|_^|   ^|_^|
 echo.
 echo   Starting services...
 echo.
@@ -15,7 +15,7 @@ cd /d "%~dp0"
 :: Start Ollama if not running
 curl -s http://localhost:11434/api/tags >nul 2>&1
 if errorlevel 1 (
-    echo   [1/3] Starting Ollama (NVIDIA GPU)...
+    echo   [1/3] Starting Ollama on NVIDIA GPU...
     set CUDA_VISIBLE_DEVICES=0
     start /min "" ollama serve
     timeout /t 3 /nobreak >nul
