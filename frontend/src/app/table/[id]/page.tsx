@@ -1,5 +1,5 @@
 "use client";
-import { use, useState, useCallback } from "react";
+import { use, useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useTable, useColumns, useRows, useCreateColumn, useCreateRow } from "@/hooks/use-api";
@@ -7,6 +7,7 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api-client";
 import { DataTable } from "@/components/table/data-table";
 import { EnrichmentPanel } from "@/components/enrichment/enrichment-panel";
+import { KeyboardShortcutsDialog } from "@/components/table/keyboard-shortcuts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -104,9 +105,28 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [colName, setColName] = useState("");
   const [colDialogOpen, setColDialogOpen] = useState(false);
   const [enrichPanelOpen, setEnrichPanelOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Connect WebSocket for real-time cell updates
   useWebSocket(id);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      }
+      if (e.key === "e" && e.ctrlKey) {
+        e.preventDefault();
+        setEnrichPanelOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const handleAddColumn = async () => {
     if (!colName.trim()) return;
@@ -151,6 +171,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           {enrichmentColumns.map((col) => (
             <EnrichmentColumnHeader key={col.id} column={col} tableId={id} />
           ))}
+
+          {/* Email composer */}
+          <Link href={`/table/${id}/emails`}>
+            <Button variant="outline" size="sm">Email</Button>
+          </Link>
 
           {/* Export CSV */}
           <Button variant="outline" size="sm" onClick={handleExportCSV}>
@@ -214,6 +239,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         onClose={() => setEnrichPanelOpen(false)}
         onSave={handleEnrichmentSave}
       />
+
+      {/* Keyboard shortcuts dialog */}
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </main>
   );
 }

@@ -61,6 +61,21 @@ export const api = {
       ),
     quota: () => request<Record<string, { used: number; limit: number; remaining: number }>>("/quota"),
   },
+  emails: {
+    compose: (data: { table_id: string; subject_template: string; body_template: string; personalization_level: string; row_ids?: string[] }) =>
+      request<import("@/types").EmailDraft[]>("/emails/compose", { method: "POST", body: JSON.stringify(data) }),
+    drafts: (tableId: string) => request<import("@/types").EmailDraft[]>(`/emails/drafts/${tableId}`),
+    updateDraft: (draftId: string, data: { subject?: string; body?: string; status?: string }) =>
+      request<import("@/types").EmailDraft>(`/emails/drafts/${draftId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    send: (draftIds: string[], delaySeconds?: number) =>
+      request<{ sent: number; failed: number; results: unknown[] }>("/emails/send", {
+        method: "POST", body: JSON.stringify({ draft_ids: draftIds, delay_seconds: delaySeconds ?? 30 }),
+      }),
+    testSend: (to: string, subject: string, body: string) =>
+      request<{ success: boolean; error: string }>("/emails/test-send", {
+        method: "POST", body: JSON.stringify({ to, subject, body }),
+      }),
+  },
   csv: {
     export: async (tableId: string, columns: import("@/types").Column[], rows: import("@/types").Row[]) => {
       const headers = columns.map((c) => c.name);

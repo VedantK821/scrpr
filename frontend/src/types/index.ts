@@ -34,6 +34,17 @@ export interface Row {
 }
 
 export interface TableListResponse {
-  tables: Table[];
+  items: Table[];
   total: number;
+}
+
+export interface EmailDraft {
+  id: string;
+  row_id: string;
+  to_email: string;
+  subject: string;
+  body: string;
+  personalization_level: string;
+  confidence: number | null;
+  status: string;
 }
