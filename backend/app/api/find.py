@@ -129,6 +129,59 @@ async def find_and_create_table(body: FindRequest, db: AsyncSession = Depends(ge
                 )
                 db.add(cell)
 
+    # Auto-create enrichment columns based on entity type
+    # These are the columns the user will "Run" to find people and emails
+    next_pos = len(fields)
+
+    if body.entity_type == "companies":
+        # For companies: add "Key Contact" (agent) + "Email" (waterfall)
+        company_col_name = "Company" if "company" not in fields else "Name" if "name" not in fields else fields[0]
+
+        contact_col = Column(
+            table_id=table.id,
+            name="Key Contact",
+            type=ColumnType.AGENT,
+            position=next_pos,
+            config={
+                "prompt": f"Find the most relevant hiring contact at /{company_col_name.replace('_', ' ').title()}/. "
+                          f"Context: {body.criteria[:200]}. "
+                          f"Return their full name, title, and LinkedIn URL."
+            },
+        )
+        db.add(contact_col)
+        await db.flush()
+        next_pos += 1
+
+        email_col = Column(
+            table_id=table.id,
+            name="Email",
+            type=ColumnType.WATERFALL,
+            position=next_pos,
+            config={
+                "prompt": f"Find email for /Key Contact/ at /{company_col_name.replace('_', ' ').title()}/",
+                "sources": ["email_pattern", "ai_agent"],
+            },
+        )
+        db.add(email_col)
+        await db.flush()
+
+    elif body.entity_type == "people":
+        # For people: add "Email" (waterfall) + "Company Info" (agent)
+        name_col_name = "Name" if "name" not in fields else "Full Name" if "full_name" not in fields else fields[0]
+
+        email_col = Column(
+            table_id=table.id,
+            name="Email",
+            type=ColumnType.WATERFALL,
+            position=next_pos,
+            config={
+                "prompt": f"Find email for /{name_col_name.replace('_', ' ').title()}/",
+                "sources": ["email_pattern", "ai_agent"],
+            },
+        )
+        db.add(email_col)
+        await db.flush()
+
     await db.commit()
 
     return FindResponse(
