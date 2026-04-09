@@ -1,16 +1,13 @@
-# Scrpr — One-click startup
+# Scrpr - One-click startup
 $Host.UI.RawUI.WindowTitle = "Scrpr"
-$Host.UI.RawUI.BackgroundColor = "Black"
-$Host.UI.RawUI.ForegroundColor = "Cyan"
 Clear-Host
 
 Write-Host ""
-Write-Host "   ███████╗ ██████╗██████╗ ██████╗ ██████╗ " -ForegroundColor Cyan
-Write-Host "   ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗" -ForegroundColor Cyan
-Write-Host "   ███████╗██║     ██████╔╝██████╔╝██████╔╝" -ForegroundColor DarkCyan
-Write-Host "   ╚════██║██║     ██╔══██╗██╔═══╝ ██╔══██╗" -ForegroundColor DarkCyan
-Write-Host "   ███████║╚██████╗██║  ██║██║     ██║  ██║" -ForegroundColor Cyan
-Write-Host "   ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝" -ForegroundColor Cyan
+Write-Host "   SSSSS   CCCCC  RRRR   PPPP   RRRR  " -ForegroundColor Cyan
+Write-Host "   S       C       R   R  P   P  R   R " -ForegroundColor Cyan
+Write-Host "   SSSSS   C       RRRR   PPPP   RRRR  " -ForegroundColor DarkCyan
+Write-Host "       S   C       R  R   P      R  R  " -ForegroundColor DarkCyan
+Write-Host "   SSSSS   CCCCC   R   R  P      R   R " -ForegroundColor Cyan
 Write-Host ""
 Write-Host "   AI-Powered Data Enrichment" -ForegroundColor DarkGray
 Write-Host ""
@@ -18,7 +15,8 @@ Write-Host ""
 Set-Location $PSScriptRoot
 
 # Step 1: Ollama
-try { $null = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 -ErrorAction Stop
+try {
+    $null = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -TimeoutSec 2 -ErrorAction Stop
     Write-Host "   [1/3] Ollama already running" -ForegroundColor Green
 } catch {
     Write-Host "   [1/3] Starting Ollama on NVIDIA GPU..." -ForegroundColor Yellow
@@ -32,11 +30,17 @@ Write-Host "   [2/3] Starting backend API..." -ForegroundColor Yellow
 $env:DATABASE_URL = "sqlite+aiosqlite:///./scrpr.db"
 $backend = Start-Process -FilePath "python" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 8000" -WorkingDirectory "$PSScriptRoot\backend" -WindowStyle Hidden -PassThru
 
-Write-Host "         Waiting for backend..." -ForegroundColor DarkGray -NoNewline
+Write-Host "         Waiting for backend" -ForegroundColor DarkGray -NoNewline
+$backendReady = $false
 do {
     Start-Sleep -Seconds 1
     Write-Host "." -ForegroundColor DarkGray -NoNewline
-    try { $null = Invoke-RestMethod -Uri "http://localhost:8000/health" -TimeoutSec 2 -ErrorAction Stop; $backendReady = $true } catch { $backendReady = $false }
+    try {
+        $null = Invoke-RestMethod -Uri "http://localhost:8000/health" -TimeoutSec 2 -ErrorAction Stop
+        $backendReady = $true
+    } catch {
+        $backendReady = $false
+    }
 } until ($backendReady)
 Write-Host " Ready!" -ForegroundColor Green
 
@@ -44,22 +48,26 @@ Write-Host " Ready!" -ForegroundColor Green
 Write-Host "   [3/3] Starting frontend..." -ForegroundColor Yellow
 $frontend = Start-Process -FilePath "npm" -ArgumentList "run dev" -WorkingDirectory "$PSScriptRoot\frontend" -WindowStyle Hidden -PassThru
 
-Write-Host "         Waiting for frontend..." -ForegroundColor DarkGray -NoNewline
+Write-Host "         Waiting for frontend" -ForegroundColor DarkGray -NoNewline
+$frontendReady = $false
 do {
     Start-Sleep -Seconds 1
     Write-Host "." -ForegroundColor DarkGray -NoNewline
-    try { $null = Invoke-WebRequest -Uri "http://localhost:3000" -TimeoutSec 2 -ErrorAction Stop; $frontendReady = $true } catch { $frontendReady = $false }
+    try {
+        $null = Invoke-WebRequest -Uri "http://localhost:3000" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+        $frontendReady = $true
+    } catch {
+        $frontendReady = $false
+    }
 } until ($frontendReady)
 Write-Host " Ready!" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "   ══════════════════════════════════════════" -ForegroundColor DarkCyan
+Write-Host "   ==========================================" -ForegroundColor DarkCyan
 Write-Host "     Scrpr is running!" -ForegroundColor White
-Write-Host "     Frontend:  " -ForegroundColor DarkGray -NoNewline
-Write-Host "http://localhost:3000" -ForegroundColor Cyan
-Write-Host "     API Docs:  " -ForegroundColor DarkGray -NoNewline
-Write-Host "http://localhost:8000/docs" -ForegroundColor Cyan
-Write-Host "   ══════════════════════════════════════════" -ForegroundColor DarkCyan
+Write-Host "     Frontend:  http://localhost:3000" -ForegroundColor Cyan
+Write-Host "     API Docs:  http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "   ==========================================" -ForegroundColor DarkCyan
 Write-Host ""
 
 # Open browser
