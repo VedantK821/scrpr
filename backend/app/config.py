@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     scraper_api_key: str = ""
     browserless_api_key: str = ""
 
+    hunter_api_key: str = ""
+    apollo_api_key: str = ""
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     frontend_url: str = "http://localhost:3000"
