@@ -1,5 +1,7 @@
+import asyncio
 import re
 from app.sources.base import EnrichmentSource, SourceResult
+from app.scraper.email_verifier import EmailVerifier, EmailVerifyStatus
 
 PATTERNS = [
     "{first}.{last}@{domain}",
@@ -13,12 +15,21 @@ PATTERNS = [
 
 class EmailPatternSource(EnrichmentSource):
     name = "email_pattern"
-    rate_limit_per_minute = 30
+    rate_limit_per_minute = 10  # Lower now because SMTP checks are slow
+
+    def __init__(self):
+        self.verifier = EmailVerifier()
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        full_name = row_data.get("name") or row_data.get("full_name") or row_data.get("Recruiter") or ""
-        domain = row_data.get("domain") or row_data.get("website") or ""
-        company = row_data.get("company") or row_data.get("Company") or ""
+        full_name = (
+            row_data.get("name")
+            or row_data.get("full_name")
+            or row_data.get("Recruiter")
+            or row_data.get("Hiring Contact")
+            or ""
+        )
+        domain = row_data.get("domain") or row_data.get("Domain") or row_data.get("website") or ""
+        company = row_data.get("company") or row_data.get("Company") or row_data.get("Name") or ""
 
         if not full_name:
             return SourceResult(found=False, source_name=self.name, error="No name provided")
@@ -27,7 +38,9 @@ class EmailPatternSource(EnrichmentSource):
 
         # Derive domain from company name if not provided
         if not domain and company:
-            domain = company.lower().replace(" ", "") + ".com"
+            # Clean company name to make a domain guess
+            clean = re.sub(r'[^a-zA-Z0-9\s]', '', company).strip()
+            domain = clean.lower().replace(" ", "") + ".com"
 
         parts = full_name.lower().split()
         if len(parts) < 2:
@@ -43,12 +56,46 @@ class EmailPatternSource(EnrichmentSource):
             email = pattern.format(first=first, last=last, f=f, domain=domain)
             candidates.append(email)
 
-        # Return the most common pattern as best guess
-        best = candidates[0]  # first.last@domain is most common
+        # Try to verify each candidate via SMTP
+        try:
+            # First check if it's a catch-all domain
+            is_catch_all = await self.verifier.is_catch_all(domain)
+
+            if is_catch_all:
+                # Can't verify individual emails — return best guess
+                return SourceResult(
+                    found=True,
+                    value=candidates[0],  # first.last is most common
+                    data={"candidates": candidates, "method": "pattern_catch_all", "verified": False},
+                    confidence=0.5,
+                    source_name=self.name,
+                )
+
+            # Verify candidates until we find a valid one
+            for email in candidates:
+                result = await self.verifier.verify(email)
+                if result.status == EmailVerifyStatus.VALID:
+                    return SourceResult(
+                        found=True,
+                        value=email,
+                        data={
+                            "candidates": candidates,
+                            "method": "pattern_smtp_verified",
+                            "verified": True,
+                            "mx_host": result.mx_host,
+                        },
+                        confidence=0.9,  # SMTP verified = high confidence
+                        source_name=self.name,
+                    )
+
+        except Exception:
+            pass  # Fall through to unverified guess
+
+        # No verification possible — return best guess
         return SourceResult(
             found=True,
-            value=best,
-            data={"candidates": candidates, "method": "pattern_generation"},
-            confidence=0.4,  # Pattern guesses have moderate confidence
+            value=candidates[0],
+            data={"candidates": candidates, "method": "pattern_unverified", "verified": False},
+            confidence=0.4,
             source_name=self.name,
         )

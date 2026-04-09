@@ -13,6 +13,7 @@ from app.models.table import Table
 from app.workers.scrape_worker import run_enrichment_job
 from app.api.ws import manager
 from app.services.quota_tracker import QuotaTracker
+from app.scraper.email_verifier import EmailVerifier
 
 router = APIRouter()
 quota_tracker = QuotaTracker()
@@ -116,3 +117,19 @@ async def enrichment_status(
 async def get_quota():
     """Get current quota usage for all sources."""
     return quota_tracker.get_usage()
+
+
+@router.post("/verify-email")
+async def verify_email(body: dict):
+    """Verify if an email address exists via SMTP."""
+    email = body.get("email", "")
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email")
+    verifier = EmailVerifier()
+    result = await verifier.verify(email)
+    return {
+        "email": result.email,
+        "status": result.status,
+        "mx_host": result.mx_host,
+        "error": result.error,
+    }

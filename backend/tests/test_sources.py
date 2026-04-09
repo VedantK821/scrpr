@@ -405,10 +405,20 @@ class TestApolloSource:
 # EmailPatternSource
 # ---------------------------------------------------------------------------
 
+def _make_unverified_source():
+    """Return an EmailPatternSource whose verifier always fails (falls through to unverified guess)."""
+    from unittest.mock import AsyncMock
+    from app.scraper.email_verifier import VerifyResult, EmailVerifyStatus
+    source = EmailPatternSource()
+    # is_catch_all raises so the except branch is taken → unverified fallback
+    source.verifier.is_catch_all = AsyncMock(side_effect=Exception("network unavailable"))
+    return source
+
+
 class TestEmailPatternSource:
     @pytest.mark.asyncio
     async def test_generates_correct_patterns(self):
-        source = EmailPatternSource()
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "John Doe", "domain": "example.com"},
             "Find email"
@@ -453,7 +463,7 @@ class TestEmailPatternSource:
 
     @pytest.mark.asyncio
     async def test_derives_domain_from_company(self):
-        source = EmailPatternSource()
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "Alice Brown", "Company": "Tech Corp"},
             "Find email"
@@ -464,7 +474,7 @@ class TestEmailPatternSource:
 
     @pytest.mark.asyncio
     async def test_strips_protocol_from_domain(self):
-        source = EmailPatternSource()
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "Bob Smith", "website": "https://www.acme.com/about"},
             "Find email"
@@ -477,7 +487,7 @@ class TestEmailPatternSource:
 
     @pytest.mark.asyncio
     async def test_uses_recruiter_field_for_name(self):
-        source = EmailPatternSource()
+        source = _make_unverified_source()
         result = await source.enrich(
             {"Recruiter": "Carol White", "domain": "jobs.com"},
             "Find email"
@@ -487,8 +497,8 @@ class TestEmailPatternSource:
         assert "carol" in result.value
 
     @pytest.mark.asyncio
-    async def test_confidence_is_moderate(self):
-        source = EmailPatternSource()
+    async def test_confidence_is_moderate_when_unverified(self):
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "Test User", "domain": "test.com"},
             "Find email"
@@ -497,18 +507,18 @@ class TestEmailPatternSource:
         assert result.confidence == pytest.approx(0.4)
 
     @pytest.mark.asyncio
-    async def test_method_label_in_data(self):
-        source = EmailPatternSource()
+    async def test_method_label_unverified_in_data(self):
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "Test User", "domain": "test.com"},
             "Find email"
         )
 
-        assert result.data["method"] == "pattern_generation"
+        assert result.data["method"] == "pattern_unverified"
 
     @pytest.mark.asyncio
     async def test_special_chars_stripped_from_name(self):
-        source = EmailPatternSource()
+        source = _make_unverified_source()
         result = await source.enrich(
             {"name": "O'Brien Smith", "domain": "co.com"},
             "Find email"
