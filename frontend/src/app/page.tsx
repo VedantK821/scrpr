@@ -1,11 +1,14 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useTables, useCreateTable } from "@/hooks/use-api";
+import { useRouter } from "next/navigation";
+import { useTables, useCreateTable, useDeleteTable } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/toast";
 import type { Table } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -22,12 +25,73 @@ function SkeletonCard() {
   );
 }
 
+function DeleteTableDialog({
+  table,
+  open,
+  onOpenChange,
+}: {
+  table: Table;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const deleteTable = useDeleteTable();
+  const router = useRouter();
+  const { success, error } = useToast();
+
+  const handleDelete = async () => {
+    try {
+      await deleteTable.mutateAsync(table.id);
+      success(`Table "${table.name}" deleted`);
+      onOpenChange(false);
+    } catch (err) {
+      error(err instanceof Error ? err.message : "Failed to delete table");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-[#18181b] border-[#3f3f46] text-[#fafafa]">
+        <DialogHeader>
+          <DialogTitle className="text-[#fafafa] font-mono text-base">Delete Table</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-[#a1a1aa] leading-relaxed">
+          Are you sure you want to delete{" "}
+          <span className="text-[#fafafa] font-semibold">"{table.name}"</span>? This will permanently
+          delete all rows and enrichment data. This action cannot be undone.
+        </p>
+        <DialogFooter className="bg-transparent border-0 -mx-0 -mb-0 rounded-none p-0 mt-2 flex-row gap-2 sm:justify-end">
+          <DialogClose
+            render={
+              <Button
+                variant="outline"
+                className="border-[#3f3f46] text-[#a1a1aa] hover:text-[#fafafa] hover:bg-[#27272a]"
+              />
+            }
+          >
+            Cancel
+          </DialogClose>
+          <Button
+            onClick={handleDelete}
+            disabled={deleteTable.isPending}
+            variant="destructive"
+            className="bg-red-900/30 border border-red-700/40 text-red-400 hover:bg-red-900/50"
+          >
+            {deleteTable.isPending ? "Deleting..." : "Delete Table"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TableCard({ table, index }: { table: Table; index: number }) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const created = new Date(table.created_at);
   const updated = new Date(table.updated_at);
   const isNew = Date.now() - created.getTime() < 60_000 * 5;
 
-  // Format relative time
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
   const diffMs = updated.getTime() - Date.now();
   const diffMin = Math.round(diffMs / 60000);
@@ -39,53 +103,92 @@ function TableCard({ table, index }: { table: Table; index: number }) {
   else relTime = rtf.format(diffDay, "day");
 
   return (
-    <Link
-      href={`/table/${table.id}`}
-      className={cn(
-        "group block rounded-xl border border-[#27272a]",
-        "glass-panel card-hover card-animate",
-        "hover:border-[#06b6d4]/40",
-        "relative overflow-hidden p-5"
-      )}
-      style={{
-        animationDelay: `${index * 80}ms`,
-      }}
-    >
-      {/* Subtle top accent line on hover */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#06b6d4]/0 to-transparent group-hover:via-[#06b6d4]/60 transition-all duration-500" />
-
-      {/* Bottom glow on hover */}
+    <>
       <div
-        className="absolute inset-x-0 bottom-0 h-20 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none"
-        style={{ background: "radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.06) 0%, transparent 70%)" }}
-      />
-
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-[#09090b] border border-[#3f3f46] flex items-center justify-center shrink-0 group-hover:border-[#06b6d4]/40 transition-colors duration-200">
-            <span className="text-sm">◫</span>
-          </div>
-          <h2 className="font-semibold text-[#fafafa] text-[15px] truncate">{table.name}</h2>
-        </div>
-        {isNew && (
-          <span className="shrink-0 inline-flex items-center rounded-full bg-[#06b6d4]/10 border border-[#06b6d4]/20 px-2 py-0.5 text-[10px] font-mono text-[#06b6d4]"
-            style={{ boxShadow: "0 0 8px rgba(6,182,212,0.15)" }}>
-            NEW
-          </span>
+        className={cn(
+          "group block rounded-xl border border-[#27272a]",
+          "glass-panel card-animate",
+          "hover:border-[#06b6d4]/40",
+          "relative overflow-hidden p-5"
         )}
+        style={{ animationDelay: `${index * 80}ms` }}
+      >
+        {/* Subtle top accent line on hover */}
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#06b6d4]/0 to-transparent group-hover:via-[#06b6d4]/60 transition-all duration-500" />
+
+        {/* Bottom glow on hover */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-20 opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.06) 0%, transparent 70%)" }}
+        />
+
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <Link href={`/table/${table.id}`} className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-[#09090b] border border-[#3f3f46] flex items-center justify-center shrink-0 group-hover:border-[#06b6d4]/40 transition-colors duration-200">
+              <span className="text-sm">◫</span>
+            </div>
+            <h2 className="font-semibold text-[#fafafa] text-[15px] truncate">{table.name}</h2>
+          </Link>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isNew && (
+              <span className="inline-flex items-center rounded-full bg-[#06b6d4]/10 border border-[#06b6d4]/20 px-2 py-0.5 text-[10px] font-mono text-[#06b6d4]"
+                style={{ boxShadow: "0 0 8px rgba(6,182,212,0.15)" }}>
+                NEW
+              </span>
+            )}
+            {/* Three-dot menu */}
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    className="w-6 h-6 rounded-md flex items-center justify-center text-[#52525b] hover:text-[#a1a1aa] hover:bg-[#27272a] border border-transparent hover:border-[#3f3f46] transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    onClick={(e) => e.preventDefault()}
+                    aria-label="Table options"
+                  />
+                }
+              >
+                <span className="text-xs leading-none">···</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end" className="min-w-[140px] bg-[#18181b] border-[#3f3f46]">
+                <DropdownMenuItem
+                  render={<Link href={`/table/${table.id}`} />}
+                  className="text-[#a1a1aa] focus:text-[#fafafa] focus:bg-[#27272a]"
+                >
+                  Open
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-[#27272a]" />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setMenuOpen(false);
+                    setDeleteOpen(true);
+                  }}
+                  className="text-red-400 focus:text-red-300 focus:bg-red-950/30"
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Meta */}
+        <Link href={`/table/${table.id}`} className="block">
+          <p className="text-[12px] text-[#52525b] font-mono">
+            Updated {relTime}
+          </p>
+
+          {/* Arrow indicator */}
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[#3f3f46] group-hover:text-[#06b6d4] group-hover:translate-x-1 transition-all duration-200">
+            →
+          </div>
+        </Link>
       </div>
 
-      {/* Meta */}
-      <p className="text-[12px] text-[#52525b] font-mono">
-        Updated {relTime}
-      </p>
-
-      {/* Arrow indicator */}
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[#3f3f46] group-hover:text-[#06b6d4] group-hover:translate-x-1 transition-all duration-200">
-        →
-      </div>
-    </Link>
+      <DeleteTableDialog table={table} open={deleteOpen} onOpenChange={setDeleteOpen} />
+    </>
   );
 }
 
@@ -122,12 +225,18 @@ export default function HomePage() {
   const createTable = useCreateTable();
   const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
+  const { success, error } = useToast();
 
   const handleCreate = async () => {
     if (!name.trim()) return;
-    await createTable.mutateAsync(name.trim());
-    setName("");
-    setOpen(false);
+    try {
+      await createTable.mutateAsync(name.trim());
+      success(`Table "${name.trim()}" created`);
+      setName("");
+      setOpen(false);
+    } catch (err) {
+      error(err instanceof Error ? err.message : "Failed to create table");
+    }
   };
 
   const tables = data?.items ?? [];

@@ -21,6 +21,23 @@ export function useCreateTable() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tables"] }),
   });
 }
+export function useUpdateTable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.tables.update(id, name),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ["tables"] });
+      qc.invalidateQueries({ queryKey: ["table", id] });
+    },
+  });
+}
+export function useDeleteTable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.tables.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tables"] }),
+  });
+}
 export function useCreateColumn(tableId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -28,10 +45,35 @@ export function useCreateColumn(tableId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["columns", tableId] }),
   });
 }
+export function useDeleteColumn(tableId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (colId: string) => api.columns.delete(tableId, colId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["columns", tableId] });
+      qc.invalidateQueries({ queryKey: ["rows", tableId] });
+    },
+  });
+}
+export function useUpdateColumn(tableId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ colId, data }: { colId: string; data: { name?: string; type?: string } }) =>
+      api.columns.update(tableId, colId, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["columns", tableId] }),
+  });
+}
 export function useCreateRow(tableId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (cells?: Record<string, string>) => api.rows.create(tableId, cells),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rows", tableId] }),
+  });
+}
+export function useDeleteRow(tableId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rowId: string) => api.rows.delete(tableId, rowId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["rows", tableId] }),
   });
 }

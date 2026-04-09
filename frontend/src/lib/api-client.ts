@@ -66,7 +66,7 @@ export const api = {
     quota: () => request<Record<string, { used: number; limit: number; remaining: number }>>("/quota"),
   },
   emails: {
-    compose: (data: { table_id: string; subject_template: string; body_template: string; personalization_level: string; row_ids?: string[] }) =>
+    compose: (data: { table_id: string; subject_template: string; body_template: string; personalization_level: string; row_ids?: string[]; ai_instructions?: string }) =>
       request<import("@/types").EmailDraft[]>("/emails/compose", { method: "POST", body: JSON.stringify(data) }),
     drafts: (tableId: string) => request<import("@/types").EmailDraft[]>(`/emails/drafts/${tableId}`),
     updateDraft: (draftId: string, data: { subject?: string; body?: string; status?: string }) =>
