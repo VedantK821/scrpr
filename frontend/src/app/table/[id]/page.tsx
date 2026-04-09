@@ -449,7 +449,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [deletingRows, setDeletingRows] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  useWebSocket(id);
+  const { logs: enrichmentLogs, clearLogs } = useWebSocket(id);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -778,6 +778,35 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           />
         )}
       </div>
+
+      {/* Activity Log — shows real-time enrichment progress */}
+      {enrichmentLogs.length > 0 && (
+        <div className="border-t border-[#27272a] bg-[#09090b] shrink-0">
+          <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#1a1a1a]">
+            <span className="text-[10px] font-mono text-[#52525b] uppercase tracking-wider">Activity Log</span>
+            <button onClick={clearLogs} className="text-[10px] text-[#3f3f46] hover:text-[#71717a]">Clear</button>
+          </div>
+          <div className="max-h-32 overflow-y-auto px-4 py-1 font-mono text-[11px] space-y-0.5">
+            {enrichmentLogs.map((msg, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "py-0.5",
+                  msg.includes("Error") || msg.includes("error") || msg.includes("Timed out")
+                    ? "text-red-400"
+                    : msg.includes("Found") || msg.includes("complete")
+                    ? "text-emerald-400"
+                    : msg.includes("Starting")
+                    ? "text-[#06b6d4]"
+                    : "text-[#52525b]"
+                )}
+              >
+                {msg}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Enrichment panel */}
       <EnrichmentPanel

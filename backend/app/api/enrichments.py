@@ -84,27 +84,74 @@ async def trigger_enrichment(
 
 
 async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> None:
-    """Process enrichments in the background, broadcasting per-cell results via WebSocket."""
-    for cell_id in cell_ids:
-        try:
-            await asyncio.wait_for(
-                run_enrichment_job(cell_id),
-                timeout=120.0,
+    """Process enrichments concurrently (3 at a time), with per-cell activity logging."""
+    import time
+
+    semaphore = asyncio.Semaphore(3)  # 3 concurrent cells
+
+    async def _process_one(cell_id: str, index: int) -> None:
+        async with semaphore:
+            start = time.time()
+            # Broadcast that we're starting this cell
+            await manager.broadcast_cell_update(
+                table_id, cell_id, None, "running",
             )
-        except asyncio.TimeoutError:
+            await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Starting enrichment for cell {cell_id[:8]}...")
+
+            try:
+                result = await asyncio.wait_for(
+                    run_enrichment_job(cell_id),
+                    timeout=120.0,
+                )
+                elapsed = time.time() - start
+                if result.get("error"):
+                    await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Error after {elapsed:.0f}s: {result['error'][:100]}")
+                else:
+                    value = result.get("value", "")
+                    source = result.get("source", "unknown")
+                    await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Found via {source} ({elapsed:.0f}s): {str(value)[:60]}")
+
+            except asyncio.TimeoutError:
+                await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Timed out after 120s")
+                async with async_session() as db:
+                    cell = await db.get(Cell, uuid.UUID(cell_id))
+                    if cell:
+                        cell.status = CellStatus.ERROR
+                        await db.commit()
+            except Exception as e:
+                await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Exception: {str(e)[:100]}")
+                async with async_session() as db:
+                    cell = await db.get(Cell, uuid.UUID(cell_id))
+                    if cell:
+                        cell.status = CellStatus.ERROR
+                        await db.commit()
+
+            # Broadcast final cell state
             async with async_session() as db:
                 cell = await db.get(Cell, uuid.UUID(cell_id))
                 if cell:
-                    cell.status = CellStatus.ERROR
-                    await db.commit()
+                    await manager.broadcast_cell_update(
+                        table_id, cell_id, cell.value, cell.status,
+                    )
 
-        # Broadcast the final cell state regardless of outcome
-        async with async_session() as db:
-            cell = await db.get(Cell, uuid.UUID(cell_id))
-            if cell:
-                await manager.broadcast_cell_update(
-                    table_id, cell_id, cell.value, cell.status,
-                )
+    await _broadcast_log(table_id, f"Starting enrichment: {len(cell_ids)} cells, 3 concurrent workers")
+    await asyncio.gather(*[_process_one(cid, i) for i, cid in enumerate(cell_ids)])
+    await _broadcast_log(table_id, f"Enrichment complete: all {len(cell_ids)} cells processed")
+
+
+async def _broadcast_log(table_id: str, message: str) -> None:
+    """Send a log message to all WebSocket clients for this table."""
+    import json as _json
+    log_msg = _json.dumps({"type": "enrichment_log", "message": message})
+    if table_id in manager.connections:
+        dead = []
+        for ws in manager.connections[table_id]:
+            try:
+                await ws.send_text(log_msg)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            manager.disconnect(ws, table_id)
 
 
 @router.get("/tables/{table_id}/columns/{column_id}/enrich/status", response_model=EnrichmentStatusResponse)
