@@ -1,42 +1,43 @@
 import json
 import logging
+import re
+import asyncio
 from app.llm.router import LLMRouter, TaskComplexity
 from app.scraper.engine import ScrapingEngine
-from app.scraper.stealth import get_random_delay
-import asyncio
+from app.scraper.stealth import get_random_user_agent, get_random_delay
+import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-LIST_BUILDER_SYSTEM_PROMPT = """/no_think You are an expert business researcher building a comprehensive list of entities.
+EXTRACT_LIST_PROMPT = """/no_think You are extracting a structured list of entities from web page content.
 
-Your job: produce a THOROUGH, ACCURATE list matching the given criteria. Think like a management consultant doing market research.
-
-Quality standards:
-1. ACCURACY: Only include entities you're confident actually exist and match the criteria. No hallucinated companies.
-2. COMPLETENESS: Include the full range — market leaders, mid-tier players, and notable smaller ones.
-3. RICHNESS: For each entity, include ALL fields you know: name, domain/website, industry, headquarters, size estimate, and anything else relevant to the criteria.
-4. DIVERSITY: Cover different sub-categories (e.g., for "IT companies" include pure IT, consulting, product companies, fintech, etc.)
-5. RELEVANCE: Every entry must genuinely match the search criteria. Don't pad with tangentially related entities.
-
-For companies: include name, domain, industry, headquarters, approximate_size
-For people: include full_name, title, company, linkedin_url (if known), department
-
-Return ONLY a JSON array of objects. No explanation, no commentary."""
-
-EXPAND_SYSTEM_PROMPT = """/no_think You are expanding a research list with new data found on the web.
+Given search criteria and raw web page text, extract ALL matching entities as a JSON array.
 
 Rules:
-1. Add ONLY entities that genuinely match the original criteria
-2. Do NOT duplicate entries already in the list (check by name, case-insensitive)
-3. Fill in missing fields on existing entries if the web data has them (e.g., add a domain that was missing)
-4. Maintain the same field structure as existing entries
-5. Web data may be noisy — extract only verified entities, not every company name mentioned in passing
+1. ONLY extract entities actually mentioned in the web content — do NOT make up entries
+2. Each entity must have at minimum a "name" field
+3. Add any other fields you can find: domain, industry, headquarters, description, etc.
+4. If a company's website/domain is mentioned, include it
+5. Extract as many as you can find — err on the side of inclusion
+6. Clean up names (proper capitalization, full company names)
 
-Return the COMPLETE merged list (existing + new) as a JSON array. No explanation."""
+Return ONLY a JSON array of objects. No explanation."""
+
+QUERY_GEN_PROMPT = """/no_think Generate 5 diverse search queries to find a comprehensive list matching this criteria.
+
+Use different angles:
+- Direct list queries ("top X companies in Y")
+- Industry reports ("2024 report companies hiring campus India")
+- Rankings and awards ("best employers India 2024")
+- News articles ("companies hiring from IITs 2024")
+- Forum/discussion queries ("reddit best companies campus placement India")
+
+Return ONLY a JSON array of 5 query strings."""
 
 
 class ListBuilder:
-    """Builds lists of companies/people from natural language descriptions."""
+    """Builds lists by searching the web first, then using LLM to extract structured data."""
 
     def __init__(self):
         self.llm = LLMRouter()
@@ -48,32 +49,43 @@ class ListBuilder:
         target_count: int = 25,
         entity_type: str = "companies",
     ) -> dict:
-        """Build a list of entities matching the criteria.
-
-        Returns: {"entities": [...], "total": int, "sources_used": [...]}
-        """
         logger.info(f"Building list: '{criteria}' (target: {target_count} {entity_type})")
 
-        # Step 1: Get initial list from LLM knowledge
-        entities = await self._generate_initial_list(criteria, target_count, entity_type)
-        logger.info(f"Initial list from LLM: {len(entities)} entities")
+        # Step 1: Generate diverse search queries
+        logger.info("Step 1: Generating search queries...")
+        queries = await self._generate_search_queries(criteria, entity_type)
+        logger.info(f"Generated {len(queries)} queries")
 
-        # Step 2: Search the web for more
-        if len(entities) < target_count:
-            search_queries = await self._generate_search_queries(criteria, entity_type)
-            web_results = await self._search_and_scrape(search_queries)
-            if web_results:
-                entities = await self._expand_list(criteria, entities, web_results, target_count, entity_type)
-                logger.info(f"After web expansion: {len(entities)} entities")
+        # Step 2: Search and scrape web pages
+        logger.info("Step 2: Searching and scraping web...")
+        all_entities = []
+        for i, query in enumerate(queries):
+            logger.info(f"  Query {i+1}/{len(queries)}: {query[:60]}...")
+            page_texts = await self._search_and_scrape_one(query)
+            if page_texts:
+                # Step 3: Extract entities from each page
+                for text in page_texts:
+                    entities = await self._extract_entities(criteria, text, entity_type)
+                    if entities:
+                        all_entities.extend(entities)
+                        logger.info(f"    Extracted {len(entities)} entities (total: {len(all_entities)})")
 
-        # Step 3: Deduplicate by name
+            if len(all_entities) >= target_count * 2:  # Get more than needed for dedup
+                break
+
+        # Step 4: Deduplicate by name
+        logger.info(f"Step 3: Deduplicating {len(all_entities)} raw entities...")
         seen = set()
         deduped = []
-        for entity in entities:
+        for entity in all_entities:
             name = (entity.get("name") or entity.get("company") or "").lower().strip()
-            if name and name not in seen:
+            # Normalize common variations
+            name = re.sub(r'\s*(ltd\.?|limited|inc\.?|pvt\.?|private|corp\.?)\s*', '', name).strip()
+            if name and len(name) > 1 and name not in seen:
                 seen.add(name)
                 deduped.append(entity)
+
+        logger.info(f"Final: {len(deduped)} unique entities")
 
         return {
             "entities": deduped[:target_count],
@@ -81,155 +93,101 @@ class ListBuilder:
             "fields": list(deduped[0].keys()) if deduped else [],
         }
 
-    async def _generate_initial_list(self, criteria: str, target_count: int, entity_type: str) -> list[dict]:
-        # Break into batches of 10 to keep prompts short and reliable
-        all_entities = []
-        batch_size = 10
-        batches_needed = (target_count + batch_size - 1) // batch_size
-
-        for batch_num in range(batches_needed):
-            already_found = [e.get("name", "") for e in all_entities]
-            exclude_str = f"\nDo NOT include these (already found): {', '.join(already_found)}" if already_found else ""
-
-            prompt = (
-                f"List {batch_size} {entity_type} matching: {criteria[:500]}\n"
-                f"{exclude_str}\n\n"
-                f"Return ONLY a JSON array with objects having: name, domain, industry, headquarters fields."
-            )
-
-            try:
-                response = await self.llm.complete(
-                    prompt,
-                    system_prompt=LIST_BUILDER_SYSTEM_PROMPT,
-                    complexity=TaskComplexity.COMPLEX,
-                    temperature=0.3 + (batch_num * 0.1),  # Increase temperature for diversity
-                    max_tokens=3000,
-                )
-                batch = self._parse_list(response)
-                if batch:
-                    all_entities.extend(batch)
-                    logger.info(f"Batch {batch_num + 1}/{batches_needed}: got {len(batch)} entities (total: {len(all_entities)})")
-                else:
-                    logger.warning(f"Batch {batch_num + 1} returned no entities")
-            except Exception as e:
-                logger.error(f"Batch {batch_num + 1} failed: {e}")
-
-            if len(all_entities) >= target_count:
-                break
-
-        return all_entities
-
     async def _generate_search_queries(self, criteria: str, entity_type: str) -> list[str]:
-        prompt = (
-            f"I need to find a list of {entity_type} matching: {criteria}\n\n"
-            f"Generate 3 Google search queries that would return pages listing these {entity_type}. "
-            f"Return ONLY a JSON array of query strings."
-        )
+        prompt = f"Find a list of {entity_type} matching: {criteria[:300]}"
 
         response = await self.llm.complete(
             prompt,
-            system_prompt="/no_think Return only a JSON array of search query strings.",
+            system_prompt=QUERY_GEN_PROMPT,
             complexity=TaskComplexity.SIMPLE,
-            temperature=0.2,
-            max_tokens=300,
+            temperature=0.3,
+            max_tokens=500,
         )
 
         try:
-            import re
             text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
             start = text.find("[")
             end = text.rfind("]")
             if start != -1 and end != -1:
-                return json.loads(text[start:end + 1])
+                queries = json.loads(text[start:end+1])
+                if isinstance(queries, list):
+                    return [str(q) for q in queries if q][:5]
         except Exception:
             pass
-        return [criteria]
+        # Fallback: use criteria directly as a search query
+        return [criteria[:100], f"list of {criteria[:80]}", f"top {criteria[:80]} 2024"]
 
-    async def _search_and_scrape(self, queries: list[str]) -> str:
-        """Search and scrape top results, return combined text."""
-        from app.scraper.stealth import get_random_user_agent
-        import httpx
-        from bs4 import BeautifulSoup
+    async def _search_and_scrape_one(self, query: str) -> list[str]:
+        """Search DuckDuckGo for one query, scrape top 3 results, return page texts."""
+        texts = []
+        try:
+            headers = {"User-Agent": get_random_user_agent()}
+            data = {"q": query}
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=15.0) as client:
+                resp = await client.post("https://html.duckduckgo.com/html/", data=data)
 
-        all_text = []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            urls = []
+            for result_div in soup.select("div.result, div.web-result"):
+                link = result_div.select_one("a.result__a, h2 a")
+                if link:
+                    href = link.get("href", "")
+                    if href.startswith("http"):
+                        urls.append(href)
+                    elif "uddg=" in href:
+                        from urllib.parse import parse_qs, urlparse
+                        parsed = parse_qs(urlparse(href).query)
+                        url = parsed.get("uddg", [None])[0]
+                        if url:
+                            urls.append(url)
 
-        for query in queries[:3]:
-            try:
-                headers = {"User-Agent": get_random_user_agent()}
-                data = {"q": query}
-                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=15.0) as client:
-                    resp = await client.post("https://html.duckduckgo.com/html/", data=data)
+            # Scrape top 3 URLs
+            for url in urls[:3]:
+                try:
+                    result = await self.engine.scrape(url)
+                    if result.success and result.text and len(result.text) > 200:
+                        texts.append(result.text[:4000])
+                except Exception:
+                    pass
+                await asyncio.sleep(get_random_delay(0.5, 1.5))
 
-                soup = BeautifulSoup(resp.text, "html.parser")
-                urls = []
-                for result_div in soup.select("div.result, div.web-result"):
-                    link = result_div.select_one("a.result__a, h2 a")
-                    if link:
-                        href = link.get("href", "")
-                        if href.startswith("http"):
-                            urls.append(href)
-                        elif "uddg=" in href:
-                            from urllib.parse import parse_qs, urlparse
-                            parsed = parse_qs(urlparse(href).query)
-                            url = parsed.get("uddg", [None])[0]
-                            if url:
-                                urls.append(url)
+        except Exception as e:
+            logger.warning(f"Search failed for '{query[:50]}': {e}")
 
-                # Scrape top 2 URLs per query
-                for url in urls[:2]:
-                    try:
-                        result = await self.engine.scrape(url)
-                        if result.success and result.text:
-                            all_text.append(result.text[:3000])
-                    except Exception:
-                        pass
-                    await asyncio.sleep(get_random_delay(1.0, 2.0))
+        return texts
 
-            except Exception as e:
-                logger.warning(f"Search failed for '{query}': {e}")
-
-            await asyncio.sleep(get_random_delay(1.0, 2.0))
-
-        return "\n\n---\n\n".join(all_text)
-
-    async def _expand_list(self, criteria: str, existing: list[dict], web_text: str, target_count: int, entity_type: str) -> list[dict]:
-        existing_json = json.dumps(existing, indent=2)
-        # Truncate web text to stay within token limits
-        web_text = web_text[:6000]
-
+    async def _extract_entities(self, criteria: str, page_text: str, entity_type: str) -> list[dict]:
+        """Use LLM to extract structured entities from a web page."""
         prompt = (
-            f"Search criteria: {criteria}\n"
-            f"Entity type: {entity_type}\n"
-            f"Target count: {target_count}\n\n"
-            f"Existing list ({len(existing)} items):\n{existing_json}\n\n"
-            f"Web search results:\n{web_text}\n\n"
-            f"Expand the list with any NEW {entity_type} found in the web results. "
-            f"Return the complete list as a JSON array."
+            f"Search criteria: {criteria[:300]}\n"
+            f"Entity type: {entity_type}\n\n"
+            f"Web page content:\n{page_text[:4000]}\n\n"
+            f"Extract all {entity_type} mentioned that match the criteria."
         )
 
-        response = await self.llm.complete(
-            prompt,
-            system_prompt=EXPAND_SYSTEM_PROMPT,
-            complexity=TaskComplexity.COMPLEX,
-            temperature=0.2,
-            max_tokens=4000,
-        )
+        try:
+            response = await self.llm.complete(
+                prompt,
+                system_prompt=EXTRACT_LIST_PROMPT,
+                complexity=TaskComplexity.MODERATE,
+                temperature=0.1,
+                max_tokens=3000,
+            )
 
-        expanded = self._parse_list(response)
-        return expanded if expanded else existing
+            return self._parse_list(response)
+        except Exception as e:
+            logger.warning(f"Entity extraction failed: {e}")
+            return []
 
     def _parse_list(self, response: str) -> list[dict]:
         if not response:
             return []
-        import re
         text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
-
-        # Find JSON array
         start = text.find("[")
         end = text.rfind("]")
         if start != -1 and end != -1 and end > start:
             try:
-                data = json.loads(text[start:end + 1])
+                data = json.loads(text[start:end+1])
                 if isinstance(data, list):
                     return [item for item in data if isinstance(item, dict)]
             except json.JSONDecodeError:
