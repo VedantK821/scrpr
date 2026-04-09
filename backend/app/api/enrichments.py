@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -5,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, async_session
 from app.models.cell import Cell, CellStatus
 from app.models.column import Column, ColumnType
 from app.models.row import Row
@@ -75,21 +76,35 @@ async def trigger_enrichment(
         cells_to_enrich.append(cell)
     await db.commit()
 
-    # Run enrichments (synchronously for now — arq workers handle async when Redis is available)
-    results = []
-    for cell in cells_to_enrich:
-        result = await run_enrichment_job(str(cell.id))
-        # Broadcast update via WebSocket
-        await db.refresh(cell)
-        await manager.broadcast_cell_update(
-            str(table_id), str(cell.id), cell.value, cell.status,
-        )
-        results.append(result)
+    # Kick off background processing and return immediately
+    cell_ids = [str(c.id) for c in cells_to_enrich]
+    asyncio.create_task(_run_enrichments_background(cell_ids, str(table_id)))
 
-    return {
-        "triggered": len(cells_to_enrich),
-        "results": results,
-    }
+    return {"triggered": len(cells_to_enrich), "status": "running"}
+
+
+async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> None:
+    """Process enrichments in the background, broadcasting per-cell results via WebSocket."""
+    for cell_id in cell_ids:
+        try:
+            await asyncio.wait_for(
+                run_enrichment_job(cell_id),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            async with async_session() as db:
+                cell = await db.get(Cell, uuid.UUID(cell_id))
+                if cell:
+                    cell.status = CellStatus.ERROR
+                    await db.commit()
+
+        # Broadcast the final cell state regardless of outcome
+        async with async_session() as db:
+            cell = await db.get(Cell, uuid.UUID(cell_id))
+            if cell:
+                await manager.broadcast_cell_update(
+                    table_id, cell_id, cell.value, cell.status,
+                )
 
 
 @router.get("/tables/{table_id}/columns/{column_id}/enrich/status", response_model=EnrichmentStatusResponse)

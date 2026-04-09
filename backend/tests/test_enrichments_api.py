@@ -60,7 +60,7 @@ def make_failure_job_result():
 class TestTriggerEnrichment:
     @pytest.mark.asyncio
     async def test_trigger_enrichment_success(self, client: AsyncClient):
-        """POST enrich on an agent column returns triggered count and results."""
+        """POST enrich on an agent column returns triggered count and running status immediately."""
         table_id = await _create_table(client, "TriggerSuccess")
         col_id = await _create_column(
             client, table_id, "agent",
@@ -77,8 +77,8 @@ class TestTriggerEnrichment:
         assert response.status_code == 200
         data = response.json()
         assert data["triggered"] == 1
-        assert len(data["results"]) == 1
-        assert data["results"][0]["success"] is True
+        assert data["status"] == "running"
+        assert "results" not in data
 
     @pytest.mark.asyncio
     async def test_trigger_enrichment_specific_rows(self, client: AsyncClient):
