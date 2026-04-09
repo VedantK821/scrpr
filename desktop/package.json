@@ -1,0 +1,63 @@
+{
+  "name": "scrpr",
+  "version": "0.1.0",
+  "description": "Open-source Clay/Claygent alternative",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.scrpr.app",
+    "productName": "Scrpr",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": ["**/*", "!__pycache__/**", "!*.pyc", "!.pytest_cache/**", "!tests/**", "!*.db"]
+      },
+      {
+        "from": "../frontend/.next",
+        "to": "frontend/.next",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../frontend/node_modules",
+        "to": "frontend/node_modules",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../frontend/package.json",
+        "to": "frontend/package.json"
+      },
+      {
+        "from": "../frontend/next.config.ts",
+        "to": "frontend/next.config.ts"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
+}
