@@ -45,11 +45,11 @@ export default function HomePage() {
         </div>
         {isLoading ? (
           <p className="text-zinc-500">Loading...</p>
-        ) : data?.tables.length === 0 ? (
+        ) : data?.items.length === 0 ? (
           <p className="text-zinc-500">No tables yet. Create one to get started.</p>
         ) : (
           <div className="grid gap-3">
-            {data?.tables.map((table) => (
+            {data?.items.map((table) => (
               <Link key={table.id} href={`/table/${table.id}`} className="block p-4 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
                 <h2 className="font-semibold">{table.name}</h2>
                 <p className="text-sm text-zinc-500">Created {new Date(table.created_at).toLocaleDateString()}</p>

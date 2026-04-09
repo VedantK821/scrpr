@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PromptTemplates } from "@/components/enrichment/prompt-templates";
 
 interface EnrichmentPanelProps {
   open: boolean;
@@ -137,12 +138,15 @@ export function EnrichmentPanel({ open, onClose, onSave }: EnrichmentPanelProps)
             </div>
 
             <div>
-              <Label>Prompt</Label>
+              <div className="flex items-center justify-between mb-1">
+                <Label>Prompt</Label>
+                <PromptTemplates onSelect={(tpl) => setPrompt(tpl)} />
+              </div>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Find the head of campus recruitment at /Company/. Return their name, title, and email."
-                className="mt-1 w-full h-32 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full h-32 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-zinc-500 mt-1">Use /ColumnName/ to reference other columns</p>
             </div>
