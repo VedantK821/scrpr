@@ -83,6 +83,81 @@ async def trigger_enrichment(
     return {"triggered": len(cells_to_enrich), "status": "running"}
 
 
+@router.post("/tables/{table_id}/enrich-all")
+async def enrich_all(table_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Run all enrichment columns sequentially: AGENT first, then WATERFALL."""
+    result = await db.execute(
+        select(Column).where(
+            Column.table_id == table_id,
+            Column.type.in_([ColumnType.AGENT, ColumnType.WATERFALL]),
+        ).order_by(Column.position)
+    )
+    columns = result.scalars().all()
+
+    if not columns:
+        raise HTTPException(status_code=400, detail="No enrichment columns found")
+
+    for col in columns:
+        if not col.config or "prompt" not in col.config:
+            raise HTTPException(status_code=400, detail=f"Column '{col.name}' has no prompt configured")
+
+    row_result = await db.execute(
+        select(Row).where(Row.table_id == table_id).options(selectinload(Row.cells))
+    )
+    rows = row_result.scalars().all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No rows found")
+
+    agent_cols = [c for c in columns if c.type == ColumnType.AGENT]
+    waterfall_cols = [c for c in columns if c.type == ColumnType.WATERFALL]
+
+    agent_cell_ids = []
+    waterfall_cell_ids = []
+
+    for col in columns:
+        target = agent_cell_ids if col in agent_cols else waterfall_cell_ids
+        for row in rows:
+            cell = next((c for c in row.cells if c.column_id == col.id), None)
+            if not cell:
+                cell = Cell(row_id=row.id, column_id=col.id, status=CellStatus.PENDING)
+                db.add(cell)
+                await db.flush()
+            else:
+                cell.status = CellStatus.PENDING
+            target.append(str(cell.id))
+
+    await db.commit()
+
+    total = len(agent_cell_ids) + len(waterfall_cell_ids)
+    asyncio.create_task(_run_all_sequential(agent_cell_ids, waterfall_cell_ids, str(table_id)))
+
+    return {
+        "triggered": total,
+        "status": "running",
+        "agent_cells": len(agent_cell_ids),
+        "waterfall_cells": len(waterfall_cell_ids),
+    }
+
+
+async def _run_all_sequential(
+    agent_cell_ids: list[str],
+    waterfall_cell_ids: list[str],
+    table_id: str,
+) -> None:
+    """Run AGENT cells first, wait, then WATERFALL cells."""
+    if agent_cell_ids:
+        await _broadcast_log(table_id, f"Phase 1/2: Enriching {len(agent_cell_ids)} agent cells...")
+        await _run_enrichments_background(agent_cell_ids, table_id)
+        await _broadcast_log(table_id, "Phase 1 complete — contact data ready.")
+
+    if waterfall_cell_ids:
+        await _broadcast_log(table_id, f"Phase 2/2: Enriching {len(waterfall_cell_ids)} waterfall cells...")
+        await _run_enrichments_background(waterfall_cell_ids, table_id)
+
+    await _broadcast_log(table_id, "All enrichments complete!")
+
+
 async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> None:
     """Process enrichments concurrently (3 at a time), with per-cell activity logging."""
     import time
@@ -92,9 +167,16 @@ async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> Non
     async def _process_one(cell_id: str, index: int) -> None:
         async with semaphore:
             start = time.time()
+            # Look up column_id for this cell
+            _col_id = None
+            async with async_session() as _db:
+                _cell = await _db.get(Cell, uuid.UUID(cell_id))
+                if _cell:
+                    _col_id = str(_cell.column_id)
+
             # Broadcast that we're starting this cell
             await manager.broadcast_cell_update(
-                table_id, cell_id, None, "running",
+                table_id, cell_id, _col_id, None, "running",
             )
             await _broadcast_log(table_id, f"[{index+1}/{len(cell_ids)}] Starting enrichment for cell {cell_id[:8]}...")
 
@@ -131,7 +213,7 @@ async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> Non
                 cell = await db.get(Cell, uuid.UUID(cell_id))
                 if cell:
                     await manager.broadcast_cell_update(
-                        table_id, cell_id, cell.value, cell.status,
+                        table_id, cell_id, str(cell.column_id), cell.value, cell.status,
                     )
 
     await _broadcast_log(table_id, f"Starting enrichment: {len(cell_ids)} cells, 3 concurrent workers")

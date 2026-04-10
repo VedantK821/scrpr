@@ -302,3 +302,62 @@ class TestGetQuota:
         # hunter and apollo have finite limits and should start at 0
         assert data["hunter"]["used"] == 0
         assert data["apollo"]["used"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Enrich All (sequential)
+# ---------------------------------------------------------------------------
+
+class TestEnrichAll:
+    @pytest.mark.asyncio
+    async def test_enrich_all_returns_triggered_count(self, client: AsyncClient):
+        """POST /enrich-all returns total triggered cells."""
+        table_id = await _create_table(client, "EnrichAllTable")
+
+        # Create a text column for context
+        resp = await client.post(f"/api/tables/{table_id}/columns", json={"name": "Company", "type": "text", "position": 0})
+        company_col_id = resp.json()["id"]
+
+        # Create agent column
+        await client.post(f"/api/tables/{table_id}/columns", json={
+            "name": "Key Contact", "type": "agent", "position": 1,
+            "config": {"prompt": "Find contact at /Company/"},
+        })
+
+        # Create waterfall column
+        await client.post(f"/api/tables/{table_id}/columns", json={
+            "name": "Email", "type": "waterfall", "position": 2,
+            "config": {"prompt": "Find email for /Key Contact/", "sources": ["email_pattern"]},
+        })
+
+        # Add a row with company data
+        await client.post(f"/api/tables/{table_id}/rows", json={"cells": {company_col_id: "TCS"}})
+
+        with patch("app.api.enrichments._run_all_sequential", new_callable=AsyncMock):
+            resp = await client.post(f"/api/tables/{table_id}/enrich-all")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "running"
+        assert data["agent_cells"] == 1
+        assert data["waterfall_cells"] == 1
+        assert data["triggered"] == 2
+
+    @pytest.mark.asyncio
+    async def test_enrich_all_no_enrichment_columns_returns_400(self, client: AsyncClient):
+        table_id = await _create_table(client, "NoEnrichTable")
+        await client.post(f"/api/tables/{table_id}/columns", json={"name": "Company", "type": "text", "position": 0})
+
+        resp = await client.post(f"/api/tables/{table_id}/enrich-all")
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_enrich_all_no_rows_returns_404(self, client: AsyncClient):
+        table_id = await _create_table(client, "NoRowsTable")
+        await client.post(f"/api/tables/{table_id}/columns", json={
+            "name": "Contact", "type": "agent", "position": 0,
+            "config": {"prompt": "Find contact"},
+        })
+
+        resp = await client.post(f"/api/tables/{table_id}/enrich-all")
+        assert resp.status_code == 404
