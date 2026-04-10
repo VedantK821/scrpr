@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -14,6 +15,14 @@ from app.sources.ai_agent import AIAgentSource
 from app.services.enrichment_router import WaterfallEngine
 
 logger = logging.getLogger(__name__)
+
+
+def render_prompt(prompt: str, row_data: dict[str, str]) -> str:
+    """Replace /ColumnName/ references in prompt with actual row values."""
+    def _replace(match):
+        key = match.group(1)
+        return row_data.get(key, match.group(0))
+    return re.sub(r'/([^/]+)/', _replace, prompt)
 
 
 async def run_enrichment_job(cell_id: str, **kwargs) -> dict:
@@ -47,7 +56,8 @@ async def run_enrichment_job(cell_id: str, **kwargs) -> dict:
         await db.commit()
 
         try:
-            prompt = column.config.get("prompt", "")
+            raw_prompt = column.config.get("prompt", "")
+            prompt = render_prompt(raw_prompt, row_data)
 
             if column.type == ColumnType.AGENT:
                 source = AIAgentSource()
