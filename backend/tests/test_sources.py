@@ -567,6 +567,26 @@ class TestEmailPatternSource:
         source = EmailPatternSource()
         assert await source.health_check() is True
 
+    @pytest.mark.asyncio
+    async def test_uses_key_contact_field(self):
+        """EmailPatternSource should accept 'Key Contact' as a name source."""
+        source = _make_unverified_source()
+        row_data = {"Key Contact": "Alice Smith", "Company": "TCS"}
+        result = await source.enrich(row_data, "Find email")
+        assert result.found is True
+        assert "alice" in result.value
+        assert "tcs.com" in result.value
+
+    @pytest.mark.asyncio
+    async def test_parses_structured_contact_for_name(self):
+        """EmailPatternSource should extract name from structured contact value."""
+        source = _make_unverified_source()
+        row_data = {"Key Contact": "Alice Smith — CTO — linkedin.com/in/alice", "Company": "TCS"}
+        result = await source.enrich(row_data, "Find email")
+        assert result.found is True
+        assert "alice" in result.value
+        assert "tcs.com" in result.value
+
 
 # ---------------------------------------------------------------------------
 # WaterfallEngine
@@ -682,6 +702,24 @@ class TestWaterfallEngine:
         await engine.run(row_data, prompt)
 
         s1.enrich.assert_called_once_with(row_data, prompt)
+
+    @pytest.mark.asyncio
+    async def test_resolves_key_contact_column_name(self):
+        """Waterfall should find person name from 'Key Contact' row_data key."""
+        s1 = make_mock_source("s1", found=True, value="test@tcs.com")
+        engine = WaterfallEngine([s1])
+        row_data = {"Key Contact": "Rajesh Kumar", "Company": "TCS"}
+        await engine.run(row_data, "Find email")
+        s1.enrich.assert_called_once_with(row_data, "Find email")
+
+    @pytest.mark.asyncio
+    async def test_parses_structured_contact_value(self):
+        """Waterfall should extract name from 'Name — Title — URL' format."""
+        s1 = make_mock_source("s1", found=True, value="test@tcs.com")
+        engine = WaterfallEngine([s1])
+        row_data = {"Key Contact": "Rajesh Kumar — VP HR — linkedin.com/in/rajesh", "Company": "TCS"}
+        result = await engine.run(row_data, "Find email")
+        assert result.found is True
 
 
 # ---------------------------------------------------------------------------

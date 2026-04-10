@@ -171,11 +171,16 @@ class EmailPatternSource(EnrichmentSource):
         self.cache = EmailCacheService()
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        full_name = (
-            row_data.get("name") or row_data.get("full_name")
+        from app.services.contact_parser import extract_name
+
+        raw_name = (
+            row_data.get("Key Contact")
+            or row_data.get("Contact")
+            or row_data.get("name") or row_data.get("full_name")
             or row_data.get("Recruiter") or row_data.get("Hiring Contact")
-            or row_data.get("Contact") or ""
+            or ""
         )
+        full_name = extract_name(raw_name) if raw_name else ""
         raw_domain = row_data.get("domain") or row_data.get("Domain") or row_data.get("website") or ""
         company = row_data.get("company") or row_data.get("Company") or row_data.get("Name") or ""
 

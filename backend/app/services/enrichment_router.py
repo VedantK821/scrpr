@@ -4,6 +4,14 @@ from app.sources.base import EnrichmentSource, SourceResult
 logger = logging.getLogger(__name__)
 
 
+def _resolve_field(row_data: dict[str, str], candidates: list[str]) -> str:
+    """Find first matching key from candidates in row_data."""
+    for key in candidates:
+        if row_data.get(key):
+            return row_data[key]
+    return ""
+
+
 class WaterfallEngine:
     """Chains enrichment sources. First hit wins."""
 
@@ -13,19 +21,19 @@ class WaterfallEngine:
         self.cache = EmailCacheService()
 
     async def run(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        # Extract person name and company from row data (handles various column naming conventions)
-        person_name = (
-            row_data.get("name")
-            or row_data.get("Recruiter")
-            or row_data.get("Hiring Contact")
-            or ""
-        )
-        company = (
-            row_data.get("company")
-            or row_data.get("Company")
-            or row_data.get("Name")
-            or ""
-        )
+        from app.services.contact_parser import extract_name
+
+        # Extract person name — check common column names
+        raw_person = _resolve_field(row_data, [
+            "Key Contact", "Contact", "Recruiter", "Hiring Contact",
+            "name", "Name", "full_name", "Full Name",
+        ])
+        person_name = extract_name(raw_person) if raw_person else ""
+
+        # Extract company
+        company = _resolve_field(row_data, [
+            "Company", "company", "Company Name", "Name", "Organisation",
+        ])
 
         # Check cache first — instant, free, no API call
         if person_name and company:

@@ -13,9 +13,14 @@ class LinkedInSource(EnrichmentSource):
         self.scraper = LinkedInScraper()
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        company = row_data.get("company") or row_data.get("Company") or ""
+        company = row_data.get("company") or row_data.get("Company") or row_data.get("Company Name") or ""
         title_hint = row_data.get("title") or row_data.get("Title") or ""
-        name = row_data.get("name") or row_data.get("Recruiter") or ""
+        raw_name = row_data.get("Key Contact") or row_data.get("Contact") or row_data.get("name") or row_data.get("Recruiter") or ""
+        if raw_name and (" — " in raw_name or " | " in raw_name or " - " in raw_name):
+            from app.services.contact_parser import extract_name
+            name = extract_name(raw_name)
+        else:
+            name = raw_name
 
         if not company:
             return SourceResult(found=False, source_name=self.name, error="No company provided")
