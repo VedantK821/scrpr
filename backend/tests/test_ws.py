@@ -71,7 +71,7 @@ class TestConnectionManager:
         manager.connections["table-broadcast"] = [ws1, ws2]
 
         await manager.broadcast_cell_update(
-            "table-broadcast", "cell-001", "test@example.com", "found"
+            "table-broadcast", "cell-001", "col-001", "test@example.com", "found"
         )
 
         ws1.send_text.assert_called_once()
@@ -81,6 +81,7 @@ class TestConnectionManager:
         sent_message = json.loads(ws1.send_text.call_args[0][0])
         assert sent_message["type"] == "cell_update"
         assert sent_message["cell_id"] == "cell-001"
+        assert sent_message["column_id"] == "col-001"
         assert sent_message["value"] == "test@example.com"
         assert sent_message["status"] == "found"
 
@@ -88,7 +89,7 @@ class TestConnectionManager:
     async def test_broadcast_no_connected_clients_does_not_raise(self):
         manager = ConnectionManager()
         # No connections for this table
-        await manager.broadcast_cell_update("empty-table", "cell-001", None, "pending")
+        await manager.broadcast_cell_update("empty-table", "cell-001", None, None, "pending")
 
     @pytest.mark.asyncio
     async def test_broadcast_removes_dead_connections(self):
@@ -100,7 +101,7 @@ class TestConnectionManager:
 
         manager.connections["table-dead"] = [ws_dead, ws_alive]
 
-        await manager.broadcast_cell_update("table-dead", "cell-002", "val", "found")
+        await manager.broadcast_cell_update("table-dead", "cell-002", "col-002", "val", "found")
 
         # Dead connection should be removed
         assert ws_dead not in manager.connections["table-dead"]
@@ -114,7 +115,7 @@ class TestConnectionManager:
         ws.send_text = AsyncMock()
         manager.connections["table-null"] = [ws]
 
-        await manager.broadcast_cell_update("table-null", "cell-003", None, "not_found")
+        await manager.broadcast_cell_update("table-null", "cell-003", None, None, "not_found")
 
         sent_message = json.loads(ws.send_text.call_args[0][0])
         assert sent_message["value"] is None
@@ -138,7 +139,7 @@ class TestConnectionManager:
         ws.send_text = AsyncMock()
         manager.connections["table-json"] = [ws]
 
-        await manager.broadcast_cell_update("table-json", "cell-004", "value", "running")
+        await manager.broadcast_cell_update("table-json", "cell-004", "col-004", "value", "running")
 
         call_arg = ws.send_text.call_args[0][0]
         assert isinstance(call_arg, str)

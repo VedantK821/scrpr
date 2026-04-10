@@ -24,13 +24,14 @@ class ConnectionManager:
             self.connections[table_id] = [ws for ws in self.connections[table_id] if ws != websocket]
         logger.info(f"WebSocket disconnected for table {table_id}")
 
-    async def broadcast_cell_update(self, table_id: str, cell_id: str, value: str | None, status: str):
+    async def broadcast_cell_update(self, table_id: str, cell_id: str, column_id: str | None, value: str | None, status: str):
         """Push a cell update to all connected clients for this table."""
         if table_id not in self.connections:
             return
         message = json.dumps({
             "type": "cell_update",
             "cell_id": cell_id,
+            "column_id": column_id,
             "value": value,
             "status": status,
         })
