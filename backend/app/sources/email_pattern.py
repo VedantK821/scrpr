@@ -236,11 +236,25 @@ class EmailPatternSource(EnrichmentSource):
         except Exception as e:
             logger.debug(f"SMTP verification failed: {e}")
 
-        # Unverified fallback
+        # Unverified fallback — try EmailRep to boost confidence
+        best = candidates[0]
+        confidence = 0.4
+        method = "pattern_unverified"
+        try:
+            from app.sources.emailrep import EmailRepSource
+            rep = EmailRepSource()
+            rep_result = await rep.verify(best)
+            if rep_result.get("exists"):
+                confidence = 0.75  # Seen online = probably real
+                method = "pattern_emailrep_confirmed"
+                logger.info(f"EmailRep confirmed {best} (refs={rep_result.get('references', 0)})")
+        except Exception as e:
+            logger.debug(f"EmailRep check failed: {e}")
+
         return SourceResult(
-            found=True, value=candidates[0],
-            data={"candidates": candidates[:5], "method": "pattern_unverified", "verified": False},
-            confidence=0.4, source_name=self.name,
+            found=True, value=best,
+            data={"candidates": candidates[:5], "method": method, "verified": False},
+            confidence=confidence, source_name=self.name,
         )
 
     async def _learn_pattern_from_cache(self, domain: str) -> str | None:
