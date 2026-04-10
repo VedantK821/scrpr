@@ -212,7 +212,7 @@ class EmailPatternSource(EnrichmentSource):
             candidates.remove(learned_pattern)
             candidates.insert(0, learned_pattern)
 
-        # Step 3: SMTP verify
+        # Step 3: Try SMTP verification first (works from servers, often blocked from home IPs)
         try:
             is_catch_all = await self.verifier.is_catch_all(domain)
 
@@ -224,7 +224,7 @@ class EmailPatternSource(EnrichmentSource):
                     confidence=0.5, source_name=self.name,
                 )
 
-            for email in candidates[:8]:  # Try top 8 patterns max
+            for email in candidates[:8]:
                 result = await self.verifier.verify(email)
                 if result.status == EmailVerifyStatus.VALID:
                     return SourceResult(
@@ -236,25 +236,15 @@ class EmailPatternSource(EnrichmentSource):
         except Exception as e:
             logger.debug(f"SMTP verification failed: {e}")
 
-        # Unverified fallback — try EmailRep to boost confidence
+        # Step 4: DNS MX check — confirm domain accepts email
         best = candidates[0]
-        confidence = 0.4
-        method = "pattern_unverified"
-        try:
-            from app.sources.emailrep import EmailRepSource
-            rep = EmailRepSource()
-            rep_result = await rep.verify(best)
-            if rep_result.get("exists"):
-                confidence = 0.75  # Seen online = probably real
-                method = "pattern_emailrep_confirmed"
-                logger.info(f"EmailRep confirmed {best} (refs={rep_result.get('references', 0)})")
-        except Exception as e:
-            logger.debug(f"EmailRep check failed: {e}")
+        mx_host = await self.verifier._get_mx_host(domain)
+        has_mx = mx_host is not None
 
         return SourceResult(
             found=True, value=best,
-            data={"candidates": candidates[:5], "method": method, "verified": False},
-            confidence=confidence, source_name=self.name,
+            data={"candidates": candidates[:5], "method": "pattern_mx_only" if has_mx else "pattern_unverified", "verified": False, "has_mx": has_mx},
+            confidence=0.5 if has_mx else 0.3, source_name=self.name,
         )
 
     async def _learn_pattern_from_cache(self, domain: str) -> str | None:
