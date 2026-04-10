@@ -66,6 +66,10 @@ export const api = {
     quota: () => request<Record<string, { used: number; limit: number; remaining: number }>>("/quota"),
     autoCreateColumns: (tableId: string) =>
       request<{ created: string[]; message: string }>(`/tables/${tableId}/auto-enrich-columns`, { method: "POST" }),
+    triggerAll: (tableId: string) =>
+      request<{ triggered: number; status: string; agent_cells: number; waterfall_cells: number }>(
+        `/tables/${tableId}/enrich-all`, { method: "POST" }
+      ),
   },
   emails: {
     compose: (data: { table_id: string; subject_template: string; body_template: string; personalization_level: string; row_ids?: string[]; ai_instructions?: string }) =>

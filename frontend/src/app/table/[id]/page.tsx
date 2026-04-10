@@ -45,13 +45,24 @@ const COLUMN_TYPES: { value: string; label: string; icon: string }[] = [
 function EnrichmentColumnHeader({
   column,
   tableId,
+  externallyRunning,
 }: {
   column: Column;
   tableId: string;
+  externallyRunning?: boolean;
 }) {
   const [isRunning, setIsRunning] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+
+  // Sync with external running state (from Run All or WebSocket)
+  useEffect(() => {
+    if (externallyRunning && !isRunning) {
+      setIsRunning(true);
+      setStartTime(Date.now());
+      setElapsed(0);
+    }
+  }, [externallyRunning]);
 
   const { data: status } = useQuery({
     queryKey: ["enrich-status", tableId, column.id],
@@ -176,13 +187,8 @@ function RunAllButton({
     }
     setRunning(true);
     try {
-      await Promise.all(
-        enrichmentColumns.map(async (col) => {
-          console.log(`[Scrpr] Triggering ${col.name} (${col.id})`);
-          const res = await api.enrichments.trigger(tableId, col.id);
-          console.log(`[Scrpr] Triggered ${col.name}:`, res);
-        })
-      );
+      const res = await api.enrichments.triggerAll(tableId);
+      console.log(`[Scrpr] Enrich-all triggered:`, res);
     } catch (err) {
       console.error("[Scrpr] Run All failed:", err);
     } finally {
@@ -449,7 +455,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [deletingRows, setDeletingRows] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
-  const { logs: enrichmentLogs, clearLogs } = useWebSocket(id);
+  const { logs: enrichmentLogs, clearLogs, activeColumnIds } = useWebSocket(id);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -568,7 +574,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         {enrichmentColumns.length > 0 && (
           <div className="flex items-center gap-3 px-6 pb-2 flex-wrap">
             {enrichmentColumns.map((col) => (
-              <EnrichmentColumnHeader key={col.id} column={col} tableId={id} />
+              <EnrichmentColumnHeader
+                key={col.id}
+                column={col}
+                tableId={id}
+                externallyRunning={activeColumnIds.has(col.id)}
+              />
             ))}
           </div>
         )}

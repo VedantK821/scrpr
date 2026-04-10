@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 interface CellUpdate {
   type: "cell_update";
   cell_id: string;
+  column_id: string | null;
   value: string | null;
   status: string;
 }
@@ -28,6 +29,7 @@ export function useWebSocket(tableId: string | undefined) {
   const unmounted = useRef(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [activeColumnIds, setActiveColumnIds] = useState<Set<string>>(new Set());
 
   const clearLogs = useCallback(() => setLogs([]), []);
 
@@ -53,6 +55,20 @@ export function useWebSocket(tableId: string | undefined) {
           const data: WSMessage = JSON.parse(event.data);
           if (data.type === "cell_update") {
             queryClient.invalidateQueries({ queryKey: ["rows", tableId] });
+            // Track which columns have running cells
+            if (data.column_id) {
+              setActiveColumnIds((prev) => {
+                const next = new Set(prev);
+                if (data.status === "running" || data.status === "pending") {
+                  next.add(data.column_id!);
+                }
+                return next;
+              });
+              // Invalidate enrichment status for completed cells
+              if (data.status !== "running" && data.status !== "pending") {
+                queryClient.invalidateQueries({ queryKey: ["enrich-status", tableId, data.column_id] });
+              }
+            }
           } else if (data.type === "enrichment_log") {
             setLogs((prev) => [...prev.slice(-(MAX_LOG_ENTRIES - 1)), data.message]);
           }
@@ -87,5 +103,5 @@ export function useWebSocket(tableId: string | undefined) {
     };
   }, [tableId, queryClient]);
 
-  return { logs, clearLogs, isConnected };
+  return { logs, clearLogs, isConnected, activeColumnIds };
 }
