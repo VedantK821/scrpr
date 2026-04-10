@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from app.sources.base import EnrichmentSource, SourceResult
-from app.sources.ai_agent import AIAgentSource
+from app.sources.ai_agent import AIAgentSource, format_agent_data
 from app.sources.hunter import HunterSource
 from app.sources.apollo import ApolloSource
 from app.sources.email_pattern import EmailPatternSource
@@ -45,7 +45,7 @@ class TestAIAgentSource:
         assert result.source_name == "ai_agent"
         assert result.confidence == 0.9
         assert result.value is not None
-        assert "email" in result.value
+        assert "test@example.com" in result.value
 
     @pytest.mark.asyncio
     async def test_enrich_failure(self):
@@ -102,6 +102,41 @@ class TestAIAgentSource:
         source = AIAgentSource()
         assert source.name == "ai_agent"
         assert source.rate_limit_per_minute == 10
+
+
+# ---------------------------------------------------------------------------
+# format_agent_data
+# ---------------------------------------------------------------------------
+
+class TestFormatAgentData:
+    def test_formats_contact_with_all_fields(self):
+        data = {"full_name": "Rajesh Kumar", "title": "VP HR", "linkedin_url": "linkedin.com/in/rajesh"}
+        assert format_agent_data(data) == "Rajesh Kumar — VP HR — linkedin.com/in/rajesh"
+
+    def test_formats_contact_name_and_title_only(self):
+        data = {"full_name": "Alice Smith", "title": "CTO"}
+        assert format_agent_data(data) == "Alice Smith — CTO"
+
+    def test_formats_contact_name_only(self):
+        data = {"full_name": "Bob Jones"}
+        assert format_agent_data(data) == "Bob Jones"
+
+    def test_formats_summary_data(self):
+        data = {"summary": "TCS is a global IT services company"}
+        assert format_agent_data(data) == "TCS is a global IT services company"
+
+    def test_formats_generic_data_with_pipe_join(self):
+        data = {"field1": "value1", "field2": "value2"}
+        result = format_agent_data(data)
+        assert "value1" in result
+        assert "value2" in result
+
+    def test_empty_dict_returns_empty_string(self):
+        assert format_agent_data({}) == ""
+
+    def test_skips_empty_values_in_contact(self):
+        data = {"full_name": "Alice", "title": "", "linkedin_url": "linkedin.com/in/alice"}
+        assert format_agent_data(data) == "Alice — linkedin.com/in/alice"
 
 
 # ---------------------------------------------------------------------------
