@@ -111,7 +111,9 @@ class AgentLoop:
             # Also search LinkedIn directly if the session is available
             linkedin = LinkedInScraper()
             if linkedin.is_available():
-                li_query = f"{context.get('company', '')} {prompt}"
+                # Use just company + a short role hint, NOT the full prompt
+                company = context.get('company', '')
+                li_query = f"{company} hiring manager recruitment"
                 try:
                     li_results = await linkedin.search_people(li_query[:100], max_results=3)
                     if li_results:
@@ -195,6 +197,11 @@ class AgentLoop:
                         if len(results) >= num_results:
                             break
         except Exception as e:
-            logger.warning(f"Google search failed for query '{query}': {e}")
+            logger.warning(f"Search failed for '{query[:50]}': {type(e).__name__}: {e}")
+
+        if not results:
+            logger.info(f"Search returned 0 results for '{query[:50]}'")
+        else:
+            logger.info(f"Search found {len(results)} results for '{query[:50]}'")
 
         return results

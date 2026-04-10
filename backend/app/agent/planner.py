@@ -11,11 +11,11 @@ GENERATE_SYSTEM_PROMPT = """/no_think You are an expert research strategist gene
 Your job is to produce 5 highly targeted search queries that will surface the EXACT information requested. Think like a professional investigator — not a casual Googler.
 
 Strategy:
-1. Use LinkedIn-specific queries when looking for people (site:linkedin.com/in/ "title" "company")
-2. Use company website queries for org-specific info (site:company.com "team" OR "leadership" OR "about")
-3. Use job board queries for current roles/hiring info (site:linkedin.com/jobs OR site:naukri.com)
-4. Use news/press queries for recent announcements ("company" "appointed" OR "joins as" OR "named")
-5. Use Google operators: "exact phrase", site:, OR, intitle:, -exclude
+1. Use simple keyword queries (DuckDuckGo search — NO site: or intitle: operators, they don't work)
+2. Include the company name + role/title being searched
+3. Try LinkedIn-style queries: "person name company linkedin"
+4. Try news queries: "company appointed new head of recruitment"
+5. Keep queries short and natural — like what a human would type
 
 Each query should take a DIFFERENT angle — don't just rephrase the same thing. Cover:
 - Direct name/title searches

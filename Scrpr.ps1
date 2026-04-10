@@ -101,8 +101,8 @@ Write-Host ""
 # Open browser
 Start-Process "http://localhost:3000"
 
-Write-Host "   Press any key to stop all services..." -ForegroundColor DarkGray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "   Type 'stop' and press Enter to stop all services..." -ForegroundColor DarkGray
+$null = Read-Host
 
 # Cleanup
 Write-Host ""

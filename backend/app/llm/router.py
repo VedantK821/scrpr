@@ -88,10 +88,21 @@ class LLMRouter:
             kwargs["api_key"] = api_key
         if response_format:
             kwargs["response_format"] = response_format
-        # For qwen3 on Ollama: disable thinking for SIMPLE tasks (search queries, yes/no),
-        # keep thinking ON for COMPLEX tasks (extraction, evaluation, list building) where quality matters
+        # For Ollama qwen3: MUST pass think=false as top-level extra_body param
+        # Without this, qwen3 puts ALL output into "thinking" field and returns empty content
+        # LiteLLM cannot read the thinking field, so content is always empty with think enabled
         if provider in ("ollama", "ollama_heavy") and "qwen" in model.lower():
-            if complexity == TaskComplexity.SIMPLE:
-                kwargs["extra_body"] = {"options": {"think": False}}
+            kwargs["extra_body"] = {"think": False}
+
         response = await acompletion(**kwargs)
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+
+        # Fallback: if content is empty, check for thinking/reasoning content
+        if not content:
+            msg = response.choices[0].message
+            # LiteLLM may store thinking in different fields
+            thinking = getattr(msg, 'reasoning_content', None) or getattr(msg, 'thinking', None)
+            if thinking:
+                content = thinking
+
+        return content or ""
