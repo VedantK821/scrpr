@@ -28,7 +28,7 @@ class AIAgentSource(EnrichmentSource):
     rate_limit_per_minute = 10
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        agent = AgentLoop(max_loops=3, timeout=45.0)
+        agent = AgentLoop(max_loops=2, timeout=120.0)
         result = await agent.run(prompt=prompt, context=row_data)
         return SourceResult(
             found=result.success,
