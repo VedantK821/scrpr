@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_pass: str = ""
 
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_user: str = ""
+    imap_pass: str = ""
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     frontend_url: str = "http://localhost:3000"
