@@ -533,12 +533,12 @@ class TestEmailPatternSource:
     async def test_derives_domain_from_company(self):
         source = _make_unverified_source()
         result = await source.enrich(
-            {"name": "Alice Brown", "Company": "Tech Corp"},
+            {"name": "Alice Brown", "Company": "TCS"},
             "Find email"
         )
 
         assert result.found is True
-        assert "@techcorp.com" in result.value
+        assert "@tcs.com" in result.value
 
     @pytest.mark.asyncio
     async def test_strips_protocol_from_domain(self):

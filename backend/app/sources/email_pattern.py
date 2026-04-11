@@ -189,8 +189,14 @@ class EmailPatternSource(EnrichmentSource):
         if not raw_domain and not company:
             return SourceResult(found=False, source_name=self.name, error="No domain or company provided")
 
-        # Smart domain resolution
-        domain = _resolve_domain(company, raw_domain)
+        # Smart domain resolution — search-based, not guessing
+        if raw_domain:
+            domain = _resolve_domain(company, raw_domain)
+        else:
+            from app.services.domain_resolver import resolve_domain
+            domain = await resolve_domain(company)
+            if not domain:
+                domain = _resolve_domain(company, "")  # fallback to old guesser
         if not domain:
             return SourceResult(found=False, source_name=self.name, error=f"Could not resolve domain for '{company}'")
 
@@ -199,16 +205,47 @@ class EmailPatternSource(EnrichmentSource):
         if not name_parts.get("first") or not name_parts.get("last"):
             return SourceResult(found=False, source_name=self.name, error="Need at least first and last name")
 
-        # Step 1: Check if we already know this domain's pattern from cache
+        # Step 1: Mine GitHub for real emails at this company (pattern learning)
+        github_direct_hit = None
+        github_pattern = None
+        try:
+            from app.services.github_email_miner import mine_github_emails
+            mine_result = await mine_github_emails(company, domain)
+            if mine_result.emails:
+                # Check if any mined email belongs to the person we're looking for
+                for mined_email in mine_result.emails:
+                    local = mined_email.split("@")[0].lower()
+                    if name_parts["first"] in local and name_parts.get("last", "") in local:
+                        github_direct_hit = mined_email
+                        break
+                if github_direct_hit:
+                    return SourceResult(
+                        found=True, value=github_direct_hit,
+                        data={"method": "github_commit_verified", "verified": True,
+                              "mined_emails": mine_result.emails[:5], "pattern": mine_result.pattern},
+                        confidence=0.95, source_name=self.name,
+                    )
+                github_pattern = mine_result.pattern
+                logger.info(f"GitHub mined pattern for {domain}: {github_pattern} ({len(mine_result.emails)} emails found)")
+        except Exception as e:
+            logger.debug(f"GitHub mining failed for {company}: {e}")
+
+        # Step 2: Check if we already know this domain's pattern from cache
         learned_pattern = await self._learn_pattern_from_cache(domain)
 
-        # Step 2: Generate candidates
+        # Step 3: Generate candidates
         candidates = _generate_candidates(name_parts, domain)
         if not candidates:
             return SourceResult(found=False, source_name=self.name, error="Could not generate email candidates")
 
-        # If we learned a pattern, put that format first
-        if learned_pattern and learned_pattern in candidates:
+        # Prioritize learned patterns (GitHub > cache)
+        if github_pattern and github_pattern == "first.last":
+            # GitHub confirmed first.last pattern — put it first
+            target = f"{name_parts['first']}.{name_parts['last']}@{domain}"
+            if target in candidates:
+                candidates.remove(target)
+                candidates.insert(0, target)
+        elif learned_pattern and learned_pattern in candidates:
             candidates.remove(learned_pattern)
             candidates.insert(0, learned_pattern)
 
