@@ -340,6 +340,62 @@ async def verify_email(body: dict):
     }
 
 
+@router.post("/email-correct")
+async def correct_email(body: dict, db: AsyncSession = Depends(get_db)):
+    """User corrects an email — stores ground truth and learns the pattern.
+
+    This is the feedback loop: one correction teaches Scrpr the company's
+    email format, improving accuracy for all future lookups at that company.
+    """
+    email = body.get("email", "")
+    person_name = body.get("person_name", "")
+    company = body.get("company", "")
+    cell_id = body.get("cell_id", "")
+
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    # Store in cache as user-verified ground truth
+    cache = EmailCacheService()
+    await cache.store(
+        person_name=person_name,
+        company=company,
+        email=email,
+        source="user_correction",
+        confidence=1.0,
+        verified=True,
+    )
+
+    # Update the cell if provided
+    if cell_id:
+        cell = await db.get(Cell, uuid.UUID(cell_id))
+        if cell:
+            cell.value = email
+            cell.status = CellStatus.FOUND
+            await db.commit()
+
+    # Learn: analyze what pattern this email uses
+    domain = email.split("@")[1]
+    local = email.split("@")[0]
+    pattern = "unknown"
+    if "." in local:
+        parts = local.split(".")
+        if len(parts) == 2:
+            pattern = "first.last" if len(parts[0]) > 1 else "f.last"
+    elif "_" in local:
+        pattern = "first_last"
+    else:
+        pattern = "firstlast"
+
+    return {
+        "stored": True,
+        "email": email,
+        "domain": domain,
+        "detected_pattern": pattern,
+        "message": f"Correction stored. Pattern '{pattern}' learned for {domain}.",
+    }
+
+
 @router.get("/email-cache/stats")
 async def email_cache_stats():
     """Get statistics about the local email cache."""

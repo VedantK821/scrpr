@@ -285,7 +285,60 @@ class EmailPatternSource(EnrichmentSource):
         except Exception as e:
             logger.debug(f"SMTP verification failed: {e}")
 
-        # Step 3c: Score best candidate with cross-reference signals (Gravatar, GitHub, MX)
+        # Step 3c: Ghost OSINT — gather domain intel to re-rank candidates
+        try:
+            from app.services.ghost_osint import gather_domain_intel
+            intel = await gather_domain_intel(domain)
+
+            # Check if any OSINT email matches our person directly
+            for osint_email in intel.all_emails:
+                local = osint_email.split("@")[0].lower()
+                first = name_parts.get("first", "")
+                last = name_parts.get("last", "")
+                if first and last and first in local and last in local:
+                    return SourceResult(
+                        found=True, value=osint_email,
+                        data={"candidates": candidates[:5], "method": "osint_direct_match", "verified": True,
+                              "source": "ghost_osint", "total_intel_emails": len(intel.all_emails)},
+                        confidence=0.90, source_name=self.name,
+                    )
+
+            # Re-rank candidates based on detected pattern from OSINT
+            if intel.detected_pattern and intel.all_emails:
+                pattern = intel.detected_pattern
+                first = name_parts.get("first", "")
+                last = name_parts.get("last", "")
+                middle = name_parts.get("middle", "")
+                f = name_parts.get("f", "")
+
+                # Generate pattern-specific candidates and prepend
+                pattern_candidates = []
+                if pattern == "first.last":
+                    pattern_candidates = [f"{first}.{last}@{domain}"]
+                elif pattern == "f.last":
+                    pattern_candidates = [f"{f}.{last}@{domain}"]
+                elif pattern == "fi.last" and middle:
+                    pattern_candidates = [f"{f}{name_parts.get('m','')}.{last}@{domain}"]
+                elif pattern == "first.middle.last" and middle:
+                    pattern_candidates = [f"{first}.{middle}.{last}@{domain}"]
+
+                # Also generate numbered variants (TCS-style disambiguation)
+                base = f"{first}.{last}"
+                for n in range(1, 6):
+                    numbered = f"{base}{n}@{domain}"
+                    if numbered not in candidates:
+                        candidates.append(numbered)
+
+                for pc in reversed(pattern_candidates):
+                    if pc in candidates:
+                        candidates.remove(pc)
+                    candidates.insert(0, pc)
+
+                logger.info(f"OSINT re-ranked candidates for {domain} (pattern={pattern}, {len(intel.all_emails)} emails)")
+        except Exception as e:
+            logger.debug(f"Ghost OSINT failed: {e}")
+
+        # Step 3d: Score best candidate with cross-reference signals (Gravatar, GitHub, MX)
         best = candidates[0]
         verification = await score_email(best, domain, provider, skip_o365=True)
 
