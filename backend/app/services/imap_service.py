@@ -6,6 +6,7 @@ Detects bounces from DSN (Delivery Status Notification) messages.
 """
 import asyncio
 import email
+import email.message
 import imaplib
 import logging
 import ssl
