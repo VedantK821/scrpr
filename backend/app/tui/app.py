@@ -209,10 +209,12 @@ class ScrprApp(App):
         self.current_table_id = table_id
         self.current_table_name = table_name
 
-        content = self.query_one("#content-area", Static)
-        content.remove()
-
         content_container = self.query_one("#content")
+        # Remove whatever is currently in the content area
+        for child in list(content_container.children):
+            if child.id != "activity-log":
+                await child.remove()
+
         table_view = TableView(table_id, table_name)
         await content_container.mount(table_view)
 
