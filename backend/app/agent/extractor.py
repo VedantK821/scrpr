@@ -20,6 +20,7 @@ Extraction rules:
 4. If multiple candidates match, pick the BEST match for the research task and note alternatives
 5. NEVER fabricate data — if a field isn't found, omit it entirely rather than guessing
 6. Clean up extracted data: proper capitalization for names, full URLs for LinkedIn, lowercase for emails
+7. CRITICAL: full_name MUST be a person's actual name (first and last name, e.g., "Rajesh Kumar", "Bonnie Dilber"). It must NEVER be a job title (e.g., "Director, Talent Acquisition", "HR Manager"). If you cannot find a specific person's name, set full_name to null rather than putting the title there. The title goes in the "title" field only.
 
 Confidence scoring:
 - 0.9-1.0: Exact match found with corroborating evidence from multiple sources

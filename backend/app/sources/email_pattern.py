@@ -212,39 +212,56 @@ class EmailPatternSource(EnrichmentSource):
             candidates.remove(learned_pattern)
             candidates.insert(0, learned_pattern)
 
-        # Step 3: Try SMTP verification first (works from servers, often blocked from home IPs)
+        # Step 3: Smart multi-signal verification
+        from app.services.smart_verifier import (
+            detect_provider, batch_verify_o365, score_email,
+            EmailProvider,
+        )
+
+        provider = await detect_provider(domain)
+
+        # Step 3a: Microsoft 365 batch enumeration (tries ALL candidates, finds the one that exists)
+        if provider == EmailProvider.MICROSOFT:
+            verified_email = await batch_verify_o365(candidates[:8])
+            if verified_email:
+                return SourceResult(
+                    found=True, value=verified_email,
+                    data={"candidates": candidates[:5], "method": "o365_verified", "verified": True, "provider": "microsoft"},
+                    confidence=0.95, source_name=self.name,
+                )
+            # O365 rejected ALL candidates — strong negative signal
+            # Fall through to SMTP as backup (might work from some networks)
+
+        # Step 3b: Try SMTP verification (works from servers, often blocked from home IPs)
         try:
             is_catch_all = await self.verifier.is_catch_all(domain)
 
-            if is_catch_all:
-                best = candidates[0]
-                return SourceResult(
-                    found=True, value=best,
-                    data={"candidates": candidates[:5], "method": "pattern_catch_all", "verified": False, "domain_pattern": "catch_all"},
-                    confidence=0.5, source_name=self.name,
-                )
-
-            for email in candidates[:8]:
-                result = await self.verifier.verify(email)
-                if result.status == EmailVerifyStatus.VALID:
-                    return SourceResult(
-                        found=True, value=email,
-                        data={"candidates": candidates[:5], "method": "pattern_smtp_verified", "verified": True, "mx_host": result.mx_host},
-                        confidence=0.9, source_name=self.name,
-                    )
-
+            if not is_catch_all:
+                for email in candidates[:8]:
+                    result = await self.verifier.verify(email)
+                    if result.status == EmailVerifyStatus.VALID:
+                        return SourceResult(
+                            found=True, value=email,
+                            data={"candidates": candidates[:5], "method": "pattern_smtp_verified", "verified": True, "mx_host": result.mx_host},
+                            confidence=0.9, source_name=self.name,
+                        )
         except Exception as e:
             logger.debug(f"SMTP verification failed: {e}")
 
-        # Step 4: DNS MX check — confirm domain accepts email
+        # Step 3c: Score best candidate with cross-reference signals (Gravatar, GitHub, MX)
         best = candidates[0]
-        mx_host = await self.verifier._get_mx_host(domain)
-        has_mx = mx_host is not None
+        verification = await score_email(best, domain, provider, skip_o365=True)
 
         return SourceResult(
             found=True, value=best,
-            data={"candidates": candidates[:5], "method": "pattern_mx_only" if has_mx else "pattern_unverified", "verified": False, "has_mx": has_mx},
-            confidence=0.5 if has_mx else 0.3, source_name=self.name,
+            data={
+                "candidates": candidates[:5],
+                "method": verification.method,
+                "verified": verification.verified,
+                "signals": verification.signals,
+                "provider": str(provider),
+            },
+            confidence=verification.confidence, source_name=self.name,
         )
 
     async def _learn_pattern_from_cache(self, domain: str) -> str | None:
