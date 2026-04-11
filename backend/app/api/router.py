@@ -7,6 +7,8 @@ from app.api.csv_routes import router as csv_router
 from app.api.linkedin import router as linkedin_router
 from app.api.find import router as find_router
 from app.api.sequences import router as sequences_router
+from app.api.quality import router as quality_router
+from app.api.table_expand import router as expand_router
 
 api_router = APIRouter()
 
@@ -22,3 +24,5 @@ api_router.include_router(csv_router, tags=["csv"])
 api_router.include_router(linkedin_router, tags=["linkedin"])
 api_router.include_router(find_router, tags=["find"])
 api_router.include_router(sequences_router, tags=["sequences"])
+api_router.include_router(quality_router, tags=["quality"])
+api_router.include_router(expand_router, tags=["expand"])
