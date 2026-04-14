@@ -1,4 +1,6 @@
 import logging
+import re
+from collections import Counter
 from datetime import datetime, timedelta
 from sqlalchemy import select, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,91 @@ from app.database import async_session
 from app.models.email_cache import EmailCache
 
 logger = logging.getLogger(__name__)
+
+# ── Pattern detection ────────────────────────────────────────────────
+
+# Known email patterns with templates
+PATTERNS = {
+    "first.last": "{first}.{last}",
+    "last.first": "{last}.{first}",
+    "first": "{first}",
+    "first.l": "{first}.{li}",
+    "f.last": "{fi}.{last}",
+    "firstlast": "{first}{last}",
+    "lastfirst": "{last}{first}",
+    "flast": "{fi}{last}",
+    "firstl": "{first}{li}",
+    "first.middle.last": "{first}.{middle}.{last}",
+    "first.mi.last": "{first}.{mi}.{last}",
+}
+
+
+def detect_pattern(email: str, person_name: str) -> str | None:
+    """Detect which email pattern was used for a person.
+
+    Args:
+        email: The verified email (e.g., "jane.doe@acme.co")
+        person_name: The person's name (e.g., "Jane Doe")
+
+    Returns:
+        Pattern name (e.g., "first.last") or None if unknown.
+    """
+    local = email.split("@")[0].lower()
+    parts = person_name.lower().strip().split()
+    if len(parts) < 2:
+        return None
+
+    first = parts[0]
+    last = parts[-1]
+    middle = parts[1] if len(parts) > 2 else ""
+
+    checks = {
+        "first.last": f"{first}.{last}",
+        "last.first": f"{last}.{first}",
+        "first": first,
+        "first.l": f"{first}.{last[0]}",
+        "f.last": f"{first[0]}.{last}",
+        "firstlast": f"{first}{last}",
+        "lastfirst": f"{last}{first}",
+        "flast": f"{first[0]}{last}",
+        "firstl": f"{first}{last[0]}",
+    }
+    if middle:
+        checks["first.middle.last"] = f"{first}.{middle}.{last}"
+        checks["first.mi.last"] = f"{first}.{middle[0]}.{last}"
+
+    for pattern_name, expected in checks.items():
+        if local == expected:
+            return pattern_name
+
+    return None
+
+
+def generate_from_pattern(pattern: str, person_name: str, domain: str) -> str:
+    """Generate an email address from a pattern and person name."""
+    parts = person_name.lower().strip().split()
+    if len(parts) < 2:
+        return ""
+
+    first = parts[0]
+    last = parts[-1]
+    middle = parts[1] if len(parts) > 2 else ""
+    fi = first[0]
+    li = last[0]
+    mi = middle[0] if middle else ""
+
+    template = PATTERNS.get(pattern, "")
+    if not template:
+        return ""
+
+    try:
+        local = template.format(
+            first=first, last=last, middle=middle,
+            fi=fi, li=li, mi=mi,
+        )
+        return f"{local}@{domain}"
+    except (KeyError, IndexError):
+        return ""
 
 # Cache entries older than this are considered stale (re-verify)
 CACHE_TTL_DAYS = 90
@@ -110,6 +197,60 @@ class EmailCacheService:
             await db.refresh(entry)
             logger.info(f"Cache STORED: {person_name}@{company} → {email} (source: {source})")
             return entry
+
+    async def detect_domain_pattern(self, domain: str) -> str | None:
+        """Detect the most common email pattern for a domain from cached emails.
+
+        Returns the pattern name (e.g., "first.last") or None.
+        """
+        entries = await self.lookup_by_domain(domain)
+        if not entries:
+            return None
+
+        patterns = []
+        for entry in entries:
+            if entry.person_name and entry.email:
+                p = detect_pattern(entry.email, entry.person_name)
+                if p:
+                    patterns.append(p)
+
+        if not patterns:
+            return None
+
+        # Return the most common pattern
+        counter = Counter(patterns)
+        best, count = counter.most_common(1)[0]
+        logger.info(f"Domain {domain} pattern: {best} ({count}/{len(entries)} entries)")
+        return best
+
+    async def generate_candidates_from_pattern(
+        self, person_name: str, domain: str
+    ) -> list[str]:
+        """Generate email candidates using the known pattern for a domain.
+
+        If we've seen verified emails at this domain before, use the
+        detected pattern to generate the most likely candidate FIRST,
+        followed by other common patterns.
+
+        Returns list of candidate emails, best guess first.
+        """
+        known_pattern = await self.detect_domain_pattern(domain)
+        candidates = []
+
+        if known_pattern:
+            best = generate_from_pattern(known_pattern, person_name, domain)
+            if best:
+                candidates.append(best)
+                logger.info(f"Pattern-first candidate for {person_name}@{domain}: {best} (pattern: {known_pattern})")
+
+        # Add all other patterns as fallback
+        for pattern_name in PATTERNS:
+            if pattern_name != known_pattern:
+                email = generate_from_pattern(pattern_name, person_name, domain)
+                if email and email not in candidates:
+                    candidates.append(email)
+
+        return candidates
 
     async def get_stats(self) -> dict:
         """Get cache statistics."""

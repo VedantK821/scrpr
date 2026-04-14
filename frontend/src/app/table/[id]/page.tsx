@@ -509,7 +509,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const handleRunAll = useCallback(async () => {
     if (enrichmentColumns.length === 0) return;
     try {
-      await Promise.all(enrichmentColumns.map((col) => api.enrichments.trigger(id, col.id)));
+      await api.enrichments.triggerAll(id);
     } catch (err) {
       error(err instanceof Error ? err.message : "Failed to run enrichments");
     }

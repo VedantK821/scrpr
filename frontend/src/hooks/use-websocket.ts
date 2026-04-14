@@ -37,7 +37,7 @@ export function useWebSocket(tableId: string | undefined) {
     if (!tableId) return;
     unmounted.current = false;
 
-    const wsUrl = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace("http", "ws")}/ws/${tableId}`;
+    const wsUrl = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003").replace("http", "ws")}/api/ws/${tableId}`;
 
     function connect() {
       if (unmounted.current) return;

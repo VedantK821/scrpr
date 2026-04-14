@@ -52,8 +52,9 @@ class ScrapingEngine:
         if not skip_http:
             layers.append(("http", self.http.scrape))
 
+        # Browser layer disabled — Playwright crashes poison the event loop
+        # HTTP handles 95% of pages. API layer is the fallback.
         layers.extend([
-            ("browser", self.browser.scrape),
             ("api", self.api.scrape)
         ])
 

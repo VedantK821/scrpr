@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+import httpx
 
 from app.database import get_db, async_session
 from app.models.cell import Cell, CellStatus
@@ -16,9 +19,27 @@ from app.api.ws import manager
 from app.services.quota_tracker import QuotaTracker
 from app.scraper.email_verifier import EmailVerifier
 from app.services.email_cache import EmailCacheService
+from app.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 quota_tracker = QuotaTracker()
+
+
+async def _check_llm_available() -> bool:
+    """Check if at least one LLM provider is reachable."""
+    # Check Ollama
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as c:
+            resp = await c.get(f"{settings.ollama_base_url}/api/tags")
+            if resp.status_code == 200:
+                return True
+    except Exception:
+        pass
+    # Check API keys
+    if settings.gemini_api_key or settings.anthropic_api_key or settings.openai_api_key:
+        return True
+    return False
 
 
 class EnrichmentRequest(BaseModel):
@@ -42,9 +63,17 @@ async def trigger_enrichment(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger enrichment for a column on specified rows (or all rows)."""
+    # Pre-flight: check if LLM is available for agent columns
     column = await db.get(Column, column_id)
     if not column or column.table_id != table_id:
         raise HTTPException(status_code=404, detail="Column not found")
+
+    if column.type == ColumnType.AGENT:
+        if not await _check_llm_available():
+            raise HTTPException(
+                status_code=503,
+                detail="No LLM available. Start Ollama or add a Gemini/Anthropic/OpenAI API key in .env",
+            )
 
     if column.type not in (ColumnType.AGENT, ColumnType.WATERFALL):
         raise HTTPException(status_code=400, detail="Column type is not enrichable")
@@ -86,6 +115,13 @@ async def trigger_enrichment(
 @router.post("/tables/{table_id}/enrich-all")
 async def enrich_all(table_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Run all enrichment columns sequentially: AGENT first, then WATERFALL."""
+    # Pre-flight: check LLM availability
+    if not await _check_llm_available():
+        raise HTTPException(
+            status_code=503,
+            detail="No LLM available. Start Ollama or add a Gemini/Anthropic/OpenAI API key in .env",
+        )
+
     result = await db.execute(
         select(Column).where(
             Column.table_id == table_id,
@@ -115,8 +151,9 @@ async def enrich_all(table_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     agent_cell_ids = []
     waterfall_cell_ids = []
 
-    for col in columns:
-        target = agent_cell_ids if col in agent_cols else waterfall_cell_ids
+    # Only set AGENT cells to PENDING now.
+    # WATERFALL cells stay as-is — they'll be set to PENDING after agents complete.
+    for col in agent_cols:
         for row in rows:
             cell = next((c for c in row.cells if c.column_id == col.id), None)
             if not cell:
@@ -125,7 +162,17 @@ async def enrich_all(table_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
                 await db.flush()
             else:
                 cell.status = CellStatus.PENDING
-            target.append(str(cell.id))
+            agent_cell_ids.append(str(cell.id))
+
+    # Collect waterfall cell IDs but DON'T set them to PENDING yet
+    for col in waterfall_cols:
+        for row in rows:
+            cell = next((c for c in row.cells if c.column_id == col.id), None)
+            if not cell:
+                cell = Cell(row_id=row.id, column_id=col.id, status=CellStatus.EMPTY)
+                db.add(cell)
+                await db.flush()
+            waterfall_cell_ids.append(str(cell.id))
 
     await db.commit()
 
@@ -145,13 +192,24 @@ async def _run_all_sequential(
     waterfall_cell_ids: list[str],
     table_id: str,
 ) -> None:
-    """Run AGENT cells first, wait, then WATERFALL cells."""
+    """Run AGENT cells first, wait, then WATERFALL cells.
+
+    WATERFALL cells are NOT set to PENDING until agents complete.
+    This prevents any process from grabbing waterfall cells prematurely.
+    """
     if agent_cell_ids:
         await _broadcast_log(table_id, f"Phase 1/2: Enriching {len(agent_cell_ids)} agent cells...")
         await _run_enrichments_background(agent_cell_ids, table_id)
         await _broadcast_log(table_id, "Phase 1 complete — contact data ready.")
 
     if waterfall_cell_ids:
+        # NOW set waterfall cells to PENDING — agents are done, contact data is available
+        async with async_session() as db:
+            for cell_id in waterfall_cell_ids:
+                cell = await db.get(Cell, uuid.UUID(cell_id))
+                if cell:
+                    cell.status = CellStatus.PENDING
+            await db.commit()
         await _broadcast_log(table_id, f"Phase 2/2: Enriching {len(waterfall_cell_ids)} waterfall cells...")
         await _run_enrichments_background(waterfall_cell_ids, table_id)
 
@@ -159,20 +217,30 @@ async def _run_all_sequential(
 
 
 async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> None:
-    """Process enrichments concurrently (3 at a time), with per-cell activity logging."""
+    """Process enrichments concurrently (3 at a time), with per-cell activity logging.
+
+    Uses atomic cell status check to prevent duplicate processing across server instances.
+    """
     import time
 
-    semaphore = asyncio.Semaphore(3)  # 3 concurrent cells
+    semaphore = asyncio.Semaphore(1)  # 1 at a time — prevents Gemini rate limiting
 
     async def _process_one(cell_id: str, index: int) -> None:
         async with semaphore:
             start = time.time()
-            # Look up column_id for this cell
+            # Atomic claim: only process if cell is still PENDING
+            # This prevents duplicate processing across server instances
             _col_id = None
             async with async_session() as _db:
                 _cell = await _db.get(Cell, uuid.UUID(cell_id))
-                if _cell:
-                    _col_id = str(_cell.column_id)
+                if not _cell:
+                    return
+                if _cell.status not in (CellStatus.PENDING, CellStatus.EMPTY):
+                    logger.info(f"Cell {cell_id[:8]} already {_cell.status} — skipping (another process got it)")
+                    return
+                _cell.status = CellStatus.RUNNING
+                _col_id = str(_cell.column_id)
+                await _db.commit()
 
             # Broadcast that we're starting this cell
             await manager.broadcast_cell_update(
@@ -183,7 +251,7 @@ async def _run_enrichments_background(cell_ids: list[str], table_id: str) -> Non
             try:
                 result = await asyncio.wait_for(
                     run_enrichment_job(cell_id),
-                    timeout=120.0,
+                    timeout=300.0,  # 5 min — agent needs time for search + scrape + LLM
                 )
                 elapsed = time.time() - start
                 if result.get("error"):

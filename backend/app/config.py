@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
     frontend_url: str = "http://localhost:3000"
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {"env_file": ["../.env", ".env"], "extra": "ignore"}
 
 
 settings = Settings()

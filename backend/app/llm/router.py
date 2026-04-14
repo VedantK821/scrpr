@@ -17,14 +17,8 @@ class LLMRouter:
         self.providers = get_providers()
 
     def _get_chain(self, complexity: TaskComplexity) -> list[ProviderConfig]:
-        local = [p for p in self.providers if p.name == "ollama"]
-        api = [p for p in self.providers if p.name not in ("ollama",)]
-        if complexity == TaskComplexity.SIMPLE:
-            return local + api
-        elif complexity == TaskComplexity.MODERATE:
-            return api[:1] + local + api[1:]
-        else:
-            return api + local
+        # Use provider list order directly — cloud APIs first, Ollama fallback
+        return self.providers
 
     async def complete(
         self,

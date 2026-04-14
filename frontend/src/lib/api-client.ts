@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}/api${path}`, {
@@ -105,6 +105,10 @@ export const api = {
       request<import("@/types").FindResponse>("/find", {
         method: "POST", body: JSON.stringify(data),
       }),
+    people: (data: { company: string; roles?: string[]; department?: string; location?: string; count?: number; verify_emails?: boolean }) =>
+      request<{ company: string; domain: string; people: Array<{ name: string; title: string; company: string; linkedin_url: string; source: string; email: string; email_verified: boolean; email_confidence: number }>; total_found: number; emails_verified: number }>(
+        "/find-people", { method: "POST", body: JSON.stringify(data) }
+      ),
   },
   csv: {
     import: async (tableId: string, file: File) => {

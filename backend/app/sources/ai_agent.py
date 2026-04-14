@@ -7,12 +7,12 @@ def format_agent_data(data: dict) -> str:
     if not data:
         return ""
     # Contact data: "Name — Title — LinkedIn"
-    if "full_name" in data:
-        parts = [data["full_name"]]
+    if data.get("full_name"):
+        parts = [str(data["full_name"])]
         if data.get("title"):
-            parts.append(data["title"])
+            parts.append(str(data["title"]))
         if data.get("linkedin_url"):
-            parts.append(data["linkedin_url"])
+            parts.append(str(data["linkedin_url"]))
         return " — ".join(parts)
     # Known single-value fields
     for key in ("summary", "description", "answer", "result", "value"):
@@ -64,14 +64,113 @@ class AIAgentSource(EnrichmentSource):
     rate_limit_per_minute = 10
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
-        agent = AgentLoop(max_loops=2, timeout=120.0)
-        result = await agent.run(prompt=prompt, context=row_data)
-        data = validate_contact_name(result.data) if result.data else {}
+        # Fast path: direct LLM knowledge + text confirmation
+        # Skips entire web scraping pipeline — 2s vs 60s
+        result = await self._fast_knowledge_lookup(row_data, prompt)
+        if result:
+            return result
+
+        # Fast path didn't find anyone — return not_found rather than
+        # burning 2+ minutes on slow web scraping that holds up the queue
         return SourceResult(
-            found=result.success,
-            value=format_agent_data(data) if data else None,
-            data=data,
-            confidence=result.confidence,
+            found=False,
+            value=None,
+            data={},
+            confidence=0.0,
             source_name=self.name,
-            error=result.error or "",
+            error="Not found in LLM knowledge",
+        )
+
+    async def _fast_knowledge_lookup(self, row_data: dict, prompt: str) -> SourceResult | None:
+        """Ask LLM directly, confirm with a text search. No scraping needed."""
+        import re
+        import json
+        import httpx
+        from bs4 import BeautifulSoup
+        from app.llm.router import LLMRouter, TaskComplexity
+
+        company = row_data.get("Name") or row_data.get("name") or row_data.get("company") or ""
+        if not company:
+            return None
+
+        router = LLMRouter()
+
+        # Step 1: Ask Gemini — role-aware prompt
+        llm_prompt = f"""/no_think You are finding the best person to contact for a job opportunity at {company}.
+
+Rules:
+- For STARTUPS (< 100 employees): Return the CEO, CTO, or founder — they decide hiring directly.
+- For LARGE companies: Return the Head of Recruiting, VP of Talent, or a senior technical recruiter.
+- Always return a SPECIFIC real person, not a generic title.
+
+Research task context: {prompt}
+
+Return ONLY this JSON, nothing else:
+{{"name": "their full real name", "title": "their exact title", "linkedin_url": "their linkedin URL if you know it, otherwise null"}}
+
+If you genuinely don't know a specific person, return {{"name": null}}"""
+
+        try:
+            result = await router.complete(
+                prompt=llm_prompt,
+                complexity=TaskComplexity.SIMPLE,
+                temperature=0.1,
+                max_tokens=300,
+            )
+        except Exception:
+            return None
+
+        # Parse response
+        text = re.sub(r'<think>.*?</think>', '', result or '', flags=re.DOTALL)
+        text = re.sub(r'```(?:json)?\s*', '', text).strip()
+        start, end = text.find('{'), text.rfind('}')
+        if start < 0 or end <= start:
+            return None
+
+        try:
+            data = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+
+        name = data.get("name")
+        if not name or name.lower() in ("n/a", "null", "none", "unknown", ""):
+            return None
+
+        title = data.get("title", "")
+        linkedin = data.get("linkedin_url")
+
+        # Step 2: Confirm with Bing text search
+        confirmed = False
+        try:
+            async with httpx.AsyncClient(timeout=8.0, headers={"User-Agent": "Mozilla/5.0"}) as c:
+                resp = await c.get(
+                    "https://www.bing.com/search",
+                    params={"q": f'"{name}" "{company}"'},
+                )
+                soup = BeautifulSoup(resp.text, "html.parser")
+                results = soup.select("#b_results .b_algo")
+                confirmed = len(results) >= 1
+        except Exception:
+            pass
+
+        if not confirmed:
+            return None
+
+        # Build result
+        contact_data = {"full_name": name, "title": title, "name_confidence": 0.9}
+        if linkedin:
+            contact_data["linkedin_url"] = linkedin
+
+        validated = validate_contact_name(contact_data)
+        formatted = format_agent_data(validated)
+
+        if not formatted:
+            return None
+
+        return SourceResult(
+            found=True,
+            value=formatted,
+            data=validated,
+            confidence=0.85,
+            source_name=self.name,
         )

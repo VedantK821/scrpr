@@ -70,6 +70,7 @@ class AgentEvaluator:
         if not response:
             return EvalResult(relevant=False, summary="No response from LLM")
         text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        text = re.sub(r'```(?:json)?\s*', '', text).strip()
         if not text:
             text = response.strip()
         start = text.find("{")

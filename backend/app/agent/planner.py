@@ -90,7 +90,9 @@ class AgentPlanner:
     def _parse_queries(self, response: str) -> list[str]:
         if not response:
             return []
+        # Strip thinking tags and markdown code blocks
         text = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+        text = re.sub(r'```(?:json)?\s*', '', text).strip()
         if not text:
             text = response.strip()
         start = text.find("[")
@@ -99,12 +101,21 @@ class AgentPlanner:
             try:
                 queries = json.loads(text[start : end + 1])
                 if isinstance(queries, list):
-                    return [str(q).strip() for q in queries if q and str(q).strip()]
+                    return [str(q).strip().strip('",').strip() for q in queries if q and str(q).strip()]
             except json.JSONDecodeError:
-                pass
-        lines = [
-            line.strip().lstrip("-•*123456789. ").strip()
-            for line in text.splitlines()
-            if line.strip()
-        ]
-        return [line for line in lines if line and len(line) > 3]
+                # Try fixing common JSON issues (trailing commas)
+                raw = text[start : end + 1]
+                raw = re.sub(r',\s*]', ']', raw)  # trailing comma
+                try:
+                    queries = json.loads(raw)
+                    if isinstance(queries, list):
+                        return [str(q).strip().strip('",').strip() for q in queries if q and str(q).strip()]
+                except json.JSONDecodeError:
+                    pass
+        # Fallback: line-by-line, strip all JSON artifacts
+        lines = []
+        for line in text.splitlines():
+            clean = line.strip().lstrip("-•*123456789. ").strip().strip('[]",').strip()
+            if clean and len(clean) > 5 and not clean.startswith('{'):
+                lines.append(clean)
+        return lines

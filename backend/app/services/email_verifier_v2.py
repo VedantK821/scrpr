@@ -1,16 +1,18 @@
-"""Email Verifier V2 — dual oracle verification engine.
+"""Email Verifier V2 — multi-oracle verification engine.
 
-Two oracles that cover ~85% of companies:
-1. Autodiscover Oracle — Microsoft 365 companies (HTTPS, no SMTP needed)
-2. Google SMTP Oracle — Google Workspace companies (port 25 RCPT TO)
-
-For companies on neither (self-hosted, other providers):
-3. Direct SMTP verification (when port 25 works and not catch-all)
-4. Fallback: pattern + MX confirmation (low confidence)
+Seven oracles covering ~95% of organizations:
+1. Autodiscover Oracle — Microsoft 365 cloud (HTTPS, no SMTP needed)
+2. Autodiscover Redirect Oracle — Hybrid Exchange (302 target discrimination)
+3. GCT DomainType Oracle — Federated M365 (DomainType=3 vs 4)
+4. Google SMTP Oracle — Google Workspace (port 25 RCPT TO)
+5. Zoho Accounts Oracle — Indian Government / mgovcloud (user lookup API)
+6. SMTP mgovcloud Oracle — Indian Government mailboxes (port 25 with STARTTLS)
+7. Direct SMTP — Other providers (catch-all detection)
 """
 import asyncio
 import logging
 import socket
+import ssl as _ssl
 
 import dns.resolver
 import httpx
@@ -18,12 +20,22 @@ import httpx
 logger = logging.getLogger(__name__)
 
 AUTODISCOVER_URL = "https://autodiscover-s.outlook.com/autodiscover/autodiscover.json/v1.0"
+ZOHO_ACCOUNTS_URL = "https://accounts.mgovcloud.in"
+GOV_DOMAINS = {"gov.in", "nic.in", "mha.gov.in", "mha.nic.in"}
+MGOVCLOUD_MX = {"mx.mgovcloud.in", "mx2.mgovcloud.in", "mx3.mgovcloud.in"}
 
 
 # ── Provider detection ────────────────────────────────────────────────
 
 async def detect_provider(domain: str) -> str:
-    """Detect email provider from MX records. Returns 'google', 'microsoft', or 'other'."""
+    """Detect email provider from MX records.
+
+    Returns: 'google', 'microsoft', 'indian_gov', or 'other'.
+    """
+    # Check Indian government domains first (before DNS)
+    if domain in GOV_DOMAINS or domain.endswith((".gov.in", ".nic.in")):
+        return "indian_gov"
+
     loop = asyncio.get_event_loop()
     try:
         def _mx():
@@ -34,6 +46,8 @@ async def detect_provider(domain: str) -> str:
                 return "google"
             if "outlook" in r or "microsoft" in r or "protection.outlook" in r:
                 return "microsoft"
+            if "mgovcloud" in r:
+                return "indian_gov"
         return "other"
     except Exception:
         return "unknown"
@@ -42,9 +56,30 @@ async def detect_provider(domain: str) -> str:
 # ── Oracle 1: Autodiscover (Microsoft 365) ────────────────────────────
 
 async def verify_autodiscover(email: str) -> dict:
-    """Verify email via Autodiscover V2. Works for Microsoft 365 tenants."""
+    """Verify email via Autodiscover V2 with redirect-target discrimination.
+
+    Three-way oracle:
+    - 200 → outlook.office365.com in Url = EXISTS (cloud)
+    - 200 → eas.outlook.com in Url = NOT_FOUND
+    - 302 → autodiscover.{company}.com = EXISTS (hybrid/on-prem)
+    """
     try:
-        async with httpx.AsyncClient(timeout=10.0, verify=False) as c:
+        async with httpx.AsyncClient(timeout=15.0, verify=False) as c:
+            # Step 1: Check redirect target WITHOUT following (hybrid detection)
+            resp_raw = await c.get(
+                f"{AUTODISCOVER_URL}/{email}",
+                params={"Protocol": "ActiveSync"},
+                headers={"User-Agent": "Microsoft Office/16.0"},
+                follow_redirects=False,
+            )
+            if resp_raw.status_code == 302:
+                location = resp_raw.headers.get("location", "")
+                company_domain = email.split("@")[1]
+                # 302 to company's own autodiscover = hybrid EXISTS
+                if f"autodiscover.{company_domain}" in location:
+                    return {"exists": True, "method": "autodiscover_hybrid", "confidence": 0.90}
+
+            # Step 2: Follow redirects for cloud check
             resp = await c.get(
                 f"{AUTODISCOVER_URL}/{email}",
                 params={"Protocol": "ActiveSync"},
@@ -58,8 +93,141 @@ async def verify_autodiscover(email: str) -> dict:
                 elif "eas.outlook.com" in url:
                     return {"exists": False, "method": "autodiscover", "confidence": 0.95}
             return {"exists": None, "method": "autodiscover", "confidence": 0.0}
+    except httpx.TimeoutException:
+        # Timeout after redirect to company autodiscover = likely hybrid EXISTS
+        return {"exists": True, "method": "autodiscover_hybrid_timeout", "confidence": 0.70}
     except Exception:
         return {"exists": None, "method": "autodiscover_error", "confidence": 0.0}
+
+
+# ── Oracle 1b: GCT DomainType (Federated M365) ──────────────────────
+
+async def verify_gct_domaintype(email: str) -> dict:
+    """Verify via GetCredentialType DomainType field.
+
+    For federated M365 tenants where Autodiscover fails per-account:
+    - DomainType=3 + CertAuth=True = managed account EXISTS
+    - DomainType=4 + FederationRedirectUrl = federated fallback = NOT_FOUND
+    Works even when ThrottleStatus=1.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            resp = await c.post(
+                "https://login.microsoftonline.com/common/GetCredentialType",
+                json={"Username": email, "isOtherIdpSupported": True, "checkPhones": True},
+            )
+            data = resp.json()
+            dt = data.get("EstsProperties", {}).get("DomainType")
+            cert_auth = data.get("Credentials", {}).get("CertAuthParams") is not None
+            fed_url = data.get("Credentials", {}).get("FederationRedirectUrl", "")
+
+            if dt == 3 and cert_auth:
+                return {"exists": True, "method": "gct_domaintype", "confidence": 0.90}
+            elif dt == 4 and fed_url:
+                return {"exists": False, "method": "gct_domaintype", "confidence": 0.85}
+            return {"exists": None, "method": "gct_domaintype", "confidence": 0.0}
+    except Exception:
+        return {"exists": None, "method": "gct_error", "confidence": 0.0}
+
+
+# ── Oracle 5: Zoho Accounts (Indian Government) ─────────────────────
+
+_zoho_csrf_cache: dict = {}
+
+
+async def verify_zoho_accounts(email: str) -> dict:
+    """Verify via Zoho Accounts lookup on mgovcloud.in.
+
+    Works for Indian government emails (gov.in, nic.in, *.gov.in).
+    Returns org name on success. Rate limits after ~50 requests.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0, verify=False) as c:
+            # Get CSRF cookie
+            if "csrf" not in _zoho_csrf_cache:
+                resp = await c.get(
+                    f"{ZOHO_ACCOUNTS_URL}/signin",
+                    params={"servicename": "ZOHOMail", "serviceurl": "https://mail.mgovcloud.in"},
+                )
+                for cookie in c.cookies.jar:
+                    if "iamcsr" in cookie.name:
+                        _zoho_csrf_cache["csrf"] = cookie.value
+                        break
+
+            csrf = _zoho_csrf_cache.get("csrf", "")
+            if not csrf:
+                return {"exists": None, "method": "zoho_no_csrf", "confidence": 0.0}
+
+            resp = await c.post(
+                f"{ZOHO_ACCOUNTS_URL}/signin/v2/lookup/{email}",
+                data={
+                    "LOGIN_ID": email,
+                    "servicename": "ZOHOMail",
+                    "serviceurl": "https://mail.mgovcloud.in",
+                },
+                headers={
+                    "X-ZCSRF-TOKEN": f"iamcsrcoo={csrf}",
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Origin": ZOHO_ACCOUNTS_URL,
+                    "Referer": f"{ZOHO_ACCOUNTS_URL}/signin?servicename=ZOHOMail",
+                },
+            )
+            data = resp.json()
+            if data.get("status_code") == 201:
+                org = data.get("lookup", {}).get("org_name", "")
+                return {"exists": True, "method": "zoho_accounts", "confidence": 0.95, "org": org}
+            elif "HIP" in data.get("message", ""):
+                logger.warning("Zoho oracle rate limited (HIP REQUIRED)")
+                return {"exists": None, "method": "zoho_rate_limited", "confidence": 0.0}
+            return {"exists": False, "method": "zoho_accounts", "confidence": 0.90}
+    except Exception:
+        return {"exists": None, "method": "zoho_error", "confidence": 0.0}
+
+
+# ── Oracle 6: SMTP mgovcloud (Indian Government mailboxes) ───────────
+
+async def verify_smtp_mgovcloud(email: str) -> dict:
+    """Verify Indian gov mailbox via SMTP on smtp.mgovcloud.in.
+
+    Uses STARTTLS on port 25. 250=EXISTS, 550=NOT_FOUND.
+    Has anti-enumeration (goes accept-all after many requests).
+    """
+    loop = asyncio.get_event_loop()
+
+    def _check():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(10)
+            s.connect(("smtp.mgovcloud.in", 25))
+            s.recv(1024)
+            s.sendall(b"EHLO scrpr.dev\r\n")
+            s.recv(4096)
+            s.sendall(b"STARTTLS\r\n")
+            s.recv(1024)
+            ctx = _ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = _ssl.CERT_NONE
+            s = ctx.wrap_socket(s, server_hostname="smtp.mgovcloud.in")
+            s.sendall(b"EHLO scrpr.dev\r\n")
+            s.recv(4096)
+
+            s.sendall(b"MAIL FROM:<verify@scrpr.dev>\r\n")
+            s.recv(1024)
+            s.sendall(f"RCPT TO:<{email}>\r\n".encode())
+            resp = s.recv(1024).decode(errors="ignore").strip()
+            s.sendall(b"QUIT\r\n")
+            s.close()
+
+            code = resp[:3]
+            if code == "250":
+                return {"exists": True, "method": "smtp_mgovcloud", "confidence": 0.85}
+            elif code == "550":
+                return {"exists": False, "method": "smtp_mgovcloud", "confidence": 0.85}
+            return {"exists": None, "method": f"smtp_mgovcloud_{code}", "confidence": 0.0}
+        except Exception:
+            return {"exists": None, "method": "smtp_mgovcloud_error", "confidence": 0.0}
+
+    return await loop.run_in_executor(None, _check)
 
 
 # ── Oracle 2: Google SMTP (Google Workspace) ──────────────────────────
@@ -182,14 +350,22 @@ async def verify_email(email: str) -> dict:
     """Verify any email using the best available oracle.
 
     Automatically detects the provider and routes to the right oracle.
+    Falls back through multiple oracles if the primary returns inconclusive.
     Returns: {"email", "exists", "confidence", "method", "provider"}
     """
     domain = email.split("@")[1]
     provider = await detect_provider(domain)
 
-    if provider == "microsoft":
-        result = await verify_autodiscover(email)
-        result["provider"] = "microsoft"
+    if provider == "indian_gov":
+        # Try Zoho Accounts first (fastest, leaks org name)
+        result = await verify_zoho_accounts(email)
+        if result["exists"] is not None:
+            result["provider"] = "indian_gov"
+            result["email"] = email
+            return result
+        # Fallback to SMTP mgovcloud
+        result = await verify_smtp_mgovcloud(email)
+        result["provider"] = "indian_gov"
         result["email"] = email
         return result
 
@@ -199,12 +375,28 @@ async def verify_email(email: str) -> dict:
         result["email"] = email
         return result
 
-    else:
-        # Try direct SMTP as fallback
-        result = await verify_direct_smtp(email)
+    # For Microsoft AND unknown providers: try Autodiscover first.
+    # Many companies (TCS, Bosch, etc.) use M365 with custom MX records
+    # that don't match the "microsoft" pattern in detect_provider.
+    result = await verify_autodiscover(email)
+    if result["exists"] is not None:
         result["provider"] = provider
         result["email"] = email
         return result
+
+    # Autodiscover inconclusive — try GCT DomainType for federated M365
+    if provider == "microsoft":
+        result = await verify_gct_domaintype(email)
+        if result["exists"] is not None:
+            result["provider"] = "microsoft"
+            result["email"] = email
+            return result
+
+    # Final fallback: direct SMTP with catch-all detection
+    result = await verify_direct_smtp(email)
+    result["provider"] = provider
+    result["email"] = email
+    return result
 
 
 async def verify_batch(emails: list[str]) -> list[dict]:

@@ -31,3 +31,4 @@ docker-compose.override.yml
 htmlcov/
 .pytest_cache/
 desktop/dist/
+.playwright-mcp/

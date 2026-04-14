@@ -108,24 +108,8 @@ class AgentLoop:
                     except Exception as e:
                         logger.warning(f"Failed to scrape {url}: {e}")
 
-            # Also search LinkedIn directly if the session is available
-            linkedin = LinkedInScraper()
-            if linkedin.is_available():
-                # Use just company + a short role hint, NOT the full prompt
-                company = context.get('company', '')
-                li_query = f"{company} hiring manager recruitment"
-                try:
-                    li_results = await linkedin.search_people(li_query[:100], max_results=3)
-                    if li_results:
-                        for person in li_results:
-                            text = f"LinkedIn Profile: {person['name']} - {person['title']} - {person['linkedin_url']}"
-                            all_relevant_texts.append(text)
-                            loop_relevant_texts.append(text)
-                            all_relevant_summaries.append(
-                                f"Found {person['name']} ({person['title']}) on LinkedIn"
-                            )
-                except Exception as e:
-                    logger.warning(f"LinkedIn search failed in agent loop: {e}")
+            # LinkedIn scraper disabled — crashes Playwright and kills the agent loop.
+            # TODO: re-enable when LinkedIn cookie auth is fixed.
 
             # Extract if we have relevant pages
             if loop_relevant_texts:
@@ -197,7 +181,30 @@ class AgentLoop:
                         if len(results) >= num_results:
                             break
         except Exception as e:
-            logger.warning(f"Search failed for '{query[:50]}': {type(e).__name__}: {e}")
+            logger.warning(f"DDG search failed for '{query[:50]}': {e}")
+
+        # Fallback to Bing if DDG fails or returns nothing
+        if not results:
+            try:
+                async with httpx.AsyncClient(
+                    headers=headers, follow_redirects=True, timeout=15.0
+                ) as client:
+                    response = await client.get(
+                        "https://www.bing.com/search", params={"q": query}
+                    )
+                    soup = BeautifulSoup(response.text, "html.parser")
+                    for li in soup.select("#b_results .b_algo"):
+                        link = li.select_one("h2 a")
+                        snippet = li.select_one(".b_caption p")
+                        if link and link.get("href"):
+                            results.append({
+                                "url": link["href"],
+                                "snippet": snippet.get_text(strip=True) if snippet else "",
+                            })
+                            if len(results) >= num_results:
+                                break
+            except Exception as e:
+                logger.warning(f"Bing search also failed for '{query[:50]}': {e}")
 
         if not results:
             logger.info(f"Search returned 0 results for '{query[:50]}'")

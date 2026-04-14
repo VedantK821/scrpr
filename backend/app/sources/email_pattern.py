@@ -1,3 +1,4 @@
+import os
 import re
 import logging
 from app.sources.base import EnrichmentSource, SourceResult
@@ -5,6 +6,19 @@ from app.scraper.email_verifier import EmailVerifier, EmailVerifyStatus
 from app.services.email_cache import EmailCacheService
 
 logger = logging.getLogger(__name__)
+
+# Self-contained enrichment logger — writes to file regardless of main.py
+_LOG_DIR = os.path.expanduser("~/.scrpr/logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
+_elog = logging.getLogger("enrichment")
+if not _elog.handlers:
+    _elog.setLevel(logging.DEBUG)
+    _efh = logging.FileHandler(os.path.join(_LOG_DIR, "enrichment.log"), encoding="utf-8")
+    _efh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s", datefmt="%H:%M:%S"))
+    _elog.addHandler(_efh)
+    _esh = logging.StreamHandler()
+    _esh.setFormatter(logging.Formatter("[ENRICH] %(message)s"))
+    _elog.addHandler(_esh)
 
 # Ordered by frequency in the real world (first.last is ~48% of companies)
 ALL_PATTERNS = [
@@ -87,12 +101,19 @@ KNOWN_DOMAINS = {
 }
 
 
+def _looks_like_domain(s: str) -> bool:
+    """Check if a string looks like a real domain (has a valid TLD)."""
+    s = s.strip().lower()
+    return bool(re.match(r'^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z]{2,})+$', s))
+
+
 def _resolve_domain(company: str, raw_domain: str) -> str:
     """Resolve company name to actual email domain."""
     if raw_domain:
-        d = raw_domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
-        if d:
+        d = raw_domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0].strip()
+        if d and _looks_like_domain(d):
             return d
+        logger.debug(f"Ignoring invalid domain value: '{raw_domain}' for {company}")
 
     if not company:
         return ""
@@ -172,6 +193,7 @@ class EmailPatternSource(EnrichmentSource):
 
     async def enrich(self, row_data: dict[str, str], prompt: str) -> SourceResult:
         from app.services.contact_parser import extract_name
+        elog = logging.getLogger("enrichment")
 
         raw_name = (
             row_data.get("Key Contact")
@@ -184,9 +206,14 @@ class EmailPatternSource(EnrichmentSource):
         raw_domain = row_data.get("domain") or row_data.get("Domain") or row_data.get("website") or ""
         company = row_data.get("company") or row_data.get("Company") or row_data.get("Name") or ""
 
+        elog.info(f"EMAIL_PATTERN: name='{full_name}' company='{company}' raw_domain='{raw_domain}'")
+        elog.debug(f"  row_data keys: {list(row_data.keys())}")
+
         if not full_name:
+            elog.warning(f"  SKIP: no name (raw='{raw_name}')")
             return SourceResult(found=False, source_name=self.name, error="No name provided")
         if not raw_domain and not company:
+            elog.warning(f"  SKIP: no domain or company")
             return SourceResult(found=False, source_name=self.name, error="No domain or company provided")
 
         # Smart domain resolution — search-based, not guessing
@@ -198,160 +225,120 @@ class EmailPatternSource(EnrichmentSource):
             if not domain:
                 domain = _resolve_domain(company, "")  # fallback to old guesser
         if not domain:
+            elog.error(f"  FAIL: could not resolve domain for '{company}'")
             return SourceResult(found=False, source_name=self.name, error=f"Could not resolve domain for '{company}'")
+        elog.info(f"  DOMAIN: {domain} (from raw='{raw_domain}', company='{company}')")
 
         # Parse name (handles titles, middle names, Indian names)
         name_parts = _parse_name(full_name)
         if not name_parts.get("first") or not name_parts.get("last"):
             return SourceResult(found=False, source_name=self.name, error="Need at least first and last name")
 
-        # Step 1: Mine GitHub for real emails at this company (pattern learning)
-        github_direct_hit = None
-        github_pattern = None
+        # ── Step 1: OSINT pattern discovery (PGP + GitHub — learn BEFORE guessing)
+        discovered_pattern = None
+        direct_hit = None
+
+        # 1a: GitHub commit mining
         try:
             from app.services.github_email_miner import mine_github_emails
             mine_result = await mine_github_emails(company, domain)
             if mine_result.emails:
-                # Check if any mined email belongs to the person we're looking for
                 for mined_email in mine_result.emails:
                     local = mined_email.split("@")[0].lower()
                     if name_parts["first"] in local and name_parts.get("last", "") in local:
-                        github_direct_hit = mined_email
+                        direct_hit = mined_email
                         break
-                if github_direct_hit:
+                if direct_hit:
+                    elog.info(f"  GITHUB HIT: {direct_hit}")
                     return SourceResult(
-                        found=True, value=github_direct_hit,
-                        data={"method": "github_commit_verified", "verified": True,
-                              "mined_emails": mine_result.emails[:5], "pattern": mine_result.pattern},
+                        found=True, value=direct_hit,
+                        data={"method": "github_commit", "verified": True},
                         confidence=0.95, source_name=self.name,
                     )
-                github_pattern = mine_result.pattern
-                logger.info(f"GitHub mined pattern for {domain}: {github_pattern} ({len(mine_result.emails)} emails found)")
+                discovered_pattern = mine_result.pattern
+                elog.info(f"  GITHUB: pattern={discovered_pattern} ({len(mine_result.emails)} emails)")
         except Exception as e:
-            logger.debug(f"GitHub mining failed for {company}: {e}")
+            elog.debug(f"  GITHUB: failed ({e})")
 
-        # Step 2: Check if we already know this domain's pattern from cache
-        learned_pattern = await self._learn_pattern_from_cache(domain)
-
-        # Step 3: Generate candidates
-        candidates = _generate_candidates(name_parts, domain)
-        if not candidates:
-            return SourceResult(found=False, source_name=self.name, error="Could not generate email candidates")
-
-        # Prioritize learned patterns (GitHub > cache)
-        if github_pattern and github_pattern == "first.last":
-            # GitHub confirmed first.last pattern — put it first
-            target = f"{name_parts['first']}.{name_parts['last']}@{domain}"
-            if target in candidates:
-                candidates.remove(target)
-                candidates.insert(0, target)
-        elif learned_pattern and learned_pattern in candidates:
-            candidates.remove(learned_pattern)
-            candidates.insert(0, learned_pattern)
-
-        # Step 3: Smart multi-signal verification
-        from app.services.smart_verifier import (
-            detect_provider, batch_verify_o365, score_email,
-            EmailProvider,
-        )
-
-        provider = await detect_provider(domain)
-
-        # Step 3a: Microsoft 365 batch enumeration (tries ALL candidates, finds the one that exists)
-        if provider == EmailProvider.MICROSOFT:
-            verified_email = await batch_verify_o365(candidates[:8])
-            if verified_email:
-                return SourceResult(
-                    found=True, value=verified_email,
-                    data={"candidates": candidates[:5], "method": "o365_verified", "verified": True, "provider": "microsoft"},
-                    confidence=0.95, source_name=self.name,
-                )
-            # O365 rejected ALL candidates — strong negative signal
-            # Fall through to SMTP as backup (might work from some networks)
-
-        # Step 3b: Try SMTP verification (works from servers, often blocked from home IPs)
-        try:
-            is_catch_all = await self.verifier.is_catch_all(domain)
-
-            if not is_catch_all:
-                for email in candidates[:8]:
-                    result = await self.verifier.verify(email)
-                    if result.status == EmailVerifyStatus.VALID:
-                        return SourceResult(
-                            found=True, value=email,
-                            data={"candidates": candidates[:5], "method": "pattern_smtp_verified", "verified": True, "mx_host": result.mx_host},
-                            confidence=0.9, source_name=self.name,
-                        )
-        except Exception as e:
-            logger.debug(f"SMTP verification failed: {e}")
-
-        # Step 3c: Ghost OSINT — gather domain intel to re-rank candidates
+        # 1b: Ghost OSINT (PGP keyservers, CT logs, search engines)
         try:
             from app.services.ghost_osint import gather_domain_intel
             intel = await gather_domain_intel(domain)
-
-            # Check if any OSINT email matches our person directly
-            for osint_email in intel.all_emails:
-                local = osint_email.split("@")[0].lower()
-                first = name_parts.get("first", "")
-                last = name_parts.get("last", "")
-                if first and last and first in local and last in local:
-                    return SourceResult(
-                        found=True, value=osint_email,
-                        data={"candidates": candidates[:5], "method": "osint_direct_match", "verified": True,
-                              "source": "ghost_osint", "total_intel_emails": len(intel.all_emails)},
-                        confidence=0.90, source_name=self.name,
-                    )
-
-            # Re-rank candidates based on detected pattern from OSINT
-            if intel.detected_pattern and intel.all_emails:
-                pattern = intel.detected_pattern
-                first = name_parts.get("first", "")
-                last = name_parts.get("last", "")
-                middle = name_parts.get("middle", "")
-                f = name_parts.get("f", "")
-
-                # Generate pattern-specific candidates and prepend
-                pattern_candidates = []
-                if pattern == "first.last":
-                    pattern_candidates = [f"{first}.{last}@{domain}"]
-                elif pattern == "f.last":
-                    pattern_candidates = [f"{f}.{last}@{domain}"]
-                elif pattern == "fi.last" and middle:
-                    pattern_candidates = [f"{f}{name_parts.get('m','')}.{last}@{domain}"]
-                elif pattern == "first.middle.last" and middle:
-                    pattern_candidates = [f"{first}.{middle}.{last}@{domain}"]
-
-                # Also generate numbered variants (TCS-style disambiguation)
-                base = f"{first}.{last}"
-                for n in range(1, 6):
-                    numbered = f"{base}{n}@{domain}"
-                    if numbered not in candidates:
-                        candidates.append(numbered)
-
-                for pc in reversed(pattern_candidates):
-                    if pc in candidates:
-                        candidates.remove(pc)
-                    candidates.insert(0, pc)
-
-                logger.info(f"OSINT re-ranked candidates for {domain} (pattern={pattern}, {len(intel.all_emails)} emails)")
+            if intel.all_emails:
+                elog.info(f"  OSINT: {len(intel.all_emails)} emails, pattern={intel.detected_pattern}")
+                for osint_email in intel.all_emails:
+                    local = osint_email.split("@")[0].lower()
+                    if name_parts["first"] in local and name_parts.get("last", "") in local:
+                        elog.info(f"  OSINT HIT: {osint_email}")
+                        return SourceResult(
+                            found=True, value=osint_email,
+                            data={"method": "osint_direct", "verified": True},
+                            confidence=0.90, source_name=self.name,
+                        )
+                if not discovered_pattern and intel.detected_pattern:
+                    discovered_pattern = intel.detected_pattern
         except Exception as e:
-            logger.debug(f"Ghost OSINT failed: {e}")
+            elog.debug(f"  OSINT: failed ({e})")
 
-        # Step 3d: Score best candidate with cross-reference signals (Gravatar, GitHub, MX)
-        best = candidates[0]
-        verification = await score_email(best, domain, provider, skip_o365=True)
+        # 1c: Cache pattern learning
+        cached_pattern = await self._learn_pattern_from_cache(domain)
+        if cached_pattern:
+            elog.info(f"  CACHE: learned pattern={cached_pattern}")
 
+        # ── Step 2: Generate candidates (pattern-first ordering)
+        candidates = _generate_candidates(name_parts, domain)
+        if not candidates:
+            elog.error(f"  FAIL: no candidates generated")
+            return SourceResult(found=False, source_name=self.name, error="Could not generate email candidates")
+
+        # Reorder: put discovered/cached pattern candidates first
+        best_pattern = discovered_pattern or cached_pattern
+        if best_pattern:
+            first = name_parts["first"]
+            last = name_parts["last"]
+            f = name_parts.get("f", "")
+            middle = name_parts.get("middle", "")
+            pattern_target = None
+            if best_pattern == "first.last":
+                pattern_target = f"{first}.{last}@{domain}"
+            elif best_pattern == "f.last":
+                pattern_target = f"{f}.{last}@{domain}"
+            elif best_pattern == "first.middle.last" and middle:
+                pattern_target = f"{first}.{middle}.{last}@{domain}"
+            if pattern_target and pattern_target in candidates:
+                candidates.remove(pattern_target)
+                candidates.insert(0, pattern_target)
+                elog.info(f"  PATTERN-FIRST: {pattern_target}")
+
+        elog.info(f"  CANDIDATES: {candidates[:5]}")
+
+        # ── Step 3: Verify via email_verifier_v2 (all 7 oracles)
+        from app.services.email_verifier_v2 import verify_batch
+
+        results = await verify_batch(candidates[:10])
+        verified = [r for r in results if r.get("exists") is True]
+
+        if verified:
+            best = verified[0]
+            elog.info(f"  VERIFIED: {best['email']} ({best['method']}, conf={best['confidence']})")
+            return SourceResult(
+                found=True, value=best["email"],
+                data={
+                    "candidates": candidates[:5],
+                    "method": best["method"],
+                    "verified": True,
+                    "provider": best.get("provider", ""),
+                },
+                confidence=best["confidence"], source_name=self.name,
+            )
+
+        # No oracle confirmed any candidate
+        best_guess = candidates[0]
+        elog.warning(f"  NO VERIFICATION: returning best guess {best_guess}")
         return SourceResult(
-            found=True, value=best,
-            data={
-                "candidates": candidates[:5],
-                "method": verification.method,
-                "verified": verification.verified,
-                "signals": verification.signals,
-                "provider": str(provider),
-            },
-            confidence=verification.confidence, source_name=self.name,
+            found=True, value=best_guess,
+            data={"candidates": candidates[:5], "method": "pattern_guess", "verified": False},
+            confidence=0.15, source_name=self.name,
         )
 
     async def _learn_pattern_from_cache(self, domain: str) -> str | None:

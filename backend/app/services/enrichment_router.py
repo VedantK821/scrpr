@@ -64,8 +64,9 @@ class WaterfallEngine:
                 if result.found and result.value:
                     logger.info(f"Waterfall: {source.name} found result: {result.value[:50]}")
 
-                    # Cache the result for future lookups
-                    if person_name and company and "@" in result.value:
+                    # Cache ONLY verified emails — never pollute cache with guesses
+                    is_verified = result.data.get("verified", False)
+                    if person_name and company and "@" in result.value and is_verified:
                         try:
                             await self.cache.store(
                                 person_name=person_name,
@@ -73,7 +74,7 @@ class WaterfallEngine:
                                 email=result.value,
                                 source=result.source_name,
                                 confidence=result.confidence,
-                                verified=result.data.get("verified", False),
+                                verified=True,
                                 extra_data={k: v for k, v in result.data.items() if k not in ("cached",)},
                             )
                         except Exception as e:

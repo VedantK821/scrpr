@@ -10,6 +10,9 @@ from app.models.column import Column, ColumnType
 from app.models.row import Row
 from app.models.cell import Cell, CellStatus
 from app.services.list_builder import ListBuilder
+from app.services.people_finder import find_people
+from app.services.email_verifier_v2 import verify_email, find_and_verify
+from app.services.domain_resolver import resolve_domain
 
 router = APIRouter()
 
@@ -189,4 +192,97 @@ async def find_and_create_table(body: FindRequest, db: AsyncSession = Depends(ge
         table_name=table_name,
         entities_found=len(entities),
         fields=fields,
+    )
+
+
+# ── Find People at a Company ────────────────────────────────────────
+
+
+class FindPeopleRequest(BaseModel):
+    company: str
+    roles: list[str] | None = None
+    department: str = ""
+    location: str = ""
+    count: int = 10
+    verify_emails: bool = False
+
+
+class PersonFound(BaseModel):
+    name: str
+    title: str = ""
+    company: str = ""
+    linkedin_url: str = ""
+    source: str = ""
+    email: str = ""
+    email_verified: bool = False
+    email_confidence: float = 0.0
+
+
+class FindPeopleResponse(BaseModel):
+    company: str
+    domain: str = ""
+    people: list[PersonFound]
+    total_found: int
+    emails_verified: int = 0
+
+
+@router.post("/find-people", response_model=FindPeopleResponse)
+async def find_people_at_company(body: FindPeopleRequest):
+    """Find people at a company by role/seniority, optionally verify their emails.
+
+    1. Discovers people via LinkedIn dorks, company websites, web search
+    2. Resolves company email domain
+    3. Optionally verifies emails using multi-oracle engine
+    """
+    # Step 1: Find people
+    people_raw = await find_people(
+        company=body.company,
+        roles=body.roles,
+        department=body.department,
+        location=body.location,
+        count=body.count,
+    )
+
+    if not people_raw:
+        raise HTTPException(status_code=404, detail=f"No people found at {body.company}")
+
+    # Step 2: Resolve domain
+    domain = await resolve_domain(body.company)
+
+    # Step 3: Optionally verify emails
+    people_out = []
+    emails_verified = 0
+
+    for p in people_raw:
+        person = PersonFound(
+            name=p["name"],
+            title=p.get("title", ""),
+            company=body.company,
+            linkedin_url=p.get("linkedin_url", ""),
+            source=p.get("source", ""),
+        )
+
+        if body.verify_emails and domain and person.name:
+            result = await find_and_verify(
+                name=person.name,
+                company=body.company,
+                domain=domain,
+            )
+            if result.get("exists"):
+                person.email = result["email"]
+                person.email_verified = True
+                person.email_confidence = result.get("confidence", 0.0)
+                emails_verified += 1
+            elif result.get("email"):
+                person.email = result["email"]
+                person.email_confidence = result.get("confidence", 0.0)
+
+        people_out.append(person)
+
+    return FindPeopleResponse(
+        company=body.company,
+        domain=domain or "",
+        people=people_out,
+        total_found=len(people_out),
+        emails_verified=emails_verified,
     )

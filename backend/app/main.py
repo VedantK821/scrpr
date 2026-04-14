@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,30 @@ from app.config import settings
 from app.database import engine, Base, async_session
 from app.models import *  # noqa: F401,F403 — register models with Base
 from app.models.cell import Cell, CellStatus
+
+# ── Logging setup ────────────────────────────────────────────────────
+LOG_DIR = os.path.expanduser("~/.scrpr/logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+_fmt = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s", datefmt="%H:%M:%S")
+
+# Root logger — file + console
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+_fh = logging.FileHandler(os.path.join(LOG_DIR, "scrpr.log"), encoding="utf-8")
+_fh.setFormatter(_fmt)
+_root.addHandler(_fh)
+
+# Enrichment-specific log — everything the pipeline does
+_elog = logging.getLogger("enrichment")
+_elog.setLevel(logging.DEBUG)
+_efh = logging.FileHandler(os.path.join(LOG_DIR, "enrichment.log"), encoding="utf-8")
+_efh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s", datefmt="%H:%M:%S"))
+_elog.addHandler(_efh)
+
+# Quiet noisy libs
+for _lib in ("httpx", "httpcore", "urllib3", "watchfiles", "asyncio"):
+    logging.getLogger(_lib).setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
