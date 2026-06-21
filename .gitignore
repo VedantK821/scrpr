@@ -32,3 +32,8 @@ htmlcov/
 .pytest_cache/
 desktop/dist/
 .playwright-mcp/
+
+# AI tooling / local artifacts
+.claude/
+.playwright-mcp/
+*.db
