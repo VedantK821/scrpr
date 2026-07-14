@@ -37,3 +37,10 @@ desktop/dist/
 .claude/
 .playwright-mcp/
 *.db
+
+# Personal OSINT / scratch scripts — never commit
+backend/find_*.py
+backend/osint_*.py
+backend/probe_*.py
+backend/diag_*.py
+backend/*_out.txt

@@ -647,7 +647,7 @@ export default function FindPage() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleFindPeople()}
-                placeholder="e.g. TCS, Accenture, Google, Acme Technologies"
+                placeholder="e.g. TCS, Accenture, Google, Acme Inc"
                 className="h-12 text-base bg-[#09090b] border-[#3f3f46] text-[#fafafa] placeholder:text-[#52525b] focus-visible:border-[#06b6d4] focus-visible:ring-[#06b6d4]/20"
               />
               <p className="text-[11px] text-[#3f3f46] font-mono">

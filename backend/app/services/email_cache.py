@@ -31,7 +31,7 @@ def detect_pattern(email: str, person_name: str) -> str | None:
     """Detect which email pattern was used for a person.
 
     Args:
-        email: The verified email (e.g., "jane.doe@acme.co")
+        email: The verified email (e.g., "jane.doe@acme.com")
         person_name: The person's name (e.g., "Jane Doe")
 
     Returns:
