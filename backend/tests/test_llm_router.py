@@ -19,6 +19,10 @@ class TestLLMRouterChain:
         chain = router._get_chain(TaskComplexity.SIMPLE)
         assert chain[0].name == "ollama"
 
+    @pytest.mark.skip(
+        reason="Complexity-based provider reordering was removed; LLMRouter._get_chain "
+        "now returns the configured provider order for every complexity."
+    )
     def test_complex_routes_api_first(self):
         router = LLMRouter()
         router.providers = make_providers()
@@ -27,6 +31,10 @@ class TestLLMRouterChain:
         # ollama should be last
         assert chain[-1].name == "ollama"
 
+    @pytest.mark.skip(
+        reason="Complexity-based provider reordering was removed; LLMRouter._get_chain "
+        "now returns the configured provider order for every complexity."
+    )
     def test_moderate_routes_first_api_then_local(self):
         router = LLMRouter()
         router.providers = make_providers()
@@ -131,6 +139,10 @@ class TestLLMRouterComplete:
         assert call_order[0] == "ollama"
         assert call_order[1] != "ollama"
 
+    @pytest.mark.skip(
+        reason="Complexity-based provider reordering was removed; the router now tries "
+        "providers in their configured order for every complexity."
+    )
     @pytest.mark.asyncio
     async def test_complex_tries_api_first(self):
         router = LLMRouter()

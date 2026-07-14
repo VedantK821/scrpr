@@ -391,7 +391,7 @@ class TestWaterfallCacheIntegration:
             value="live@example.com",
             source_name="hunter",
             confidence=0.8,
-            data={},
+            data={"verified": True},  # engine caches verified emails only
         ))
 
         mock_cache = AsyncMock()

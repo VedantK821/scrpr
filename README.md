@@ -2,10 +2,12 @@
 
 **Open-source Clay/Claygent alternative.** AI-powered data enrichment with web research, waterfall enrichment, and personalized email outreach.
 
+> **Status:** Working prototype. The web app, AI research agent, enrichment waterfall, and live table updates are functional. The Patchright stealth-browser scraping layer is included in the codebase but **disabled by default** for event-loop stability — the HTTP and API layers handle scraping. Some tests are integration tests that need live API keys/network; see [Development](#development).
+
 ## Features
 
 - **AI Research Agent** — Autonomous web browsing agent that finds any data point (like Claygent)
-- **3-Layer Scraping Engine** — httpx (fast) → Patchright stealth browser → API fallback
+- **Layered Scraping Engine** — httpx (fast) → API fallback, with an optional Patchright stealth-browser layer (included; disabled by default for stability)
 - **Waterfall Enrichment** — Chain multiple data sources; first hit wins
 - **Spreadsheet UI** — AG Grid with real-time cell updates via WebSocket
 - **AI Email Composer** — Template → AI personalization → Preview all → Send with rate limiting
@@ -61,7 +63,7 @@ npm run dev
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, AG Grid, shadcn/ui, Tailwind CSS, TanStack Query |
+| Frontend | Next.js 16, AG Grid, shadcn/ui, Tailwind CSS, TanStack Query |
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Pydantic v2 |
 | AI | LiteLLM (Ollama / Gemini / Claude / OpenAI), agentic research loop |
 | Scraping | Patchright (stealth), httpx, ScraperAPI, Browserless |
@@ -140,12 +142,18 @@ SMTP_PASS=your_app_password
 ## Development
 
 ```bash
-# Run backend tests
+# Run the backend unit suite (offline, no keys needed)
 cd backend && pytest tests/ -v
+
+# Run the integration tests too (need live network + API keys)
+cd backend && pytest tests/ -v -m integration
 
 # Run frontend build check
 cd frontend && npm run build
 ```
+
+Integration tests (live DNS/SMTP probes and source APIs) are deselected by default so the
+unit suite runs fast and offline; opt in with `-m integration`.
 
 ## License
 

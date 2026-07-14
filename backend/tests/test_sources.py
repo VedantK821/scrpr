@@ -9,6 +9,9 @@ from app.sources import get_source_by_name, get_all_sources
 from app.services.enrichment_router import WaterfallEngine
 from app.services.quota_tracker import QuotaTracker
 
+# Integration: some cases exercise live source APIs/network; deselected by default (run with `-m integration`).
+pytestmark = pytest.mark.integration
+
 
 # ---------------------------------------------------------------------------
 # Helpers

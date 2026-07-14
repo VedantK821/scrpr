@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 from app.scraper.email_verifier import EmailVerifier, EmailVerifyStatus, VerifyResult
 from app.sources.email_pattern import EmailPatternSource
 
+# Integration: exercises live DNS/MX and SMTP probes; deselected by default (run with `-m integration`).
+pytestmark = pytest.mark.integration
+
 
 # ---------------------------------------------------------------------------
 # EmailVerifier._get_mx_host

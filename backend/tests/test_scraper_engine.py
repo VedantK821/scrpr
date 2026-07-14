@@ -34,9 +34,14 @@ class TestScrapingEngine:
             assert result.layer == "http"
             mock_http.assert_called_once()
 
+    @pytest.mark.skip(
+        reason="Browser layer intentionally disabled in ScrapingEngine for "
+        "event-loop stability (see app/scraper/engine.py). Re-enable this test "
+        "when the Patchright stealth layer is restored."
+    )
     @pytest.mark.asyncio
     async def test_engine_scrape_fallback_to_browser(self, engine):
-        """Test that engine falls back to browser when HTTP fails."""
+        """Test that engine falls back to browser when HTTP fails (browser layer currently disabled)."""
         http_failure = ScrapeResult(
             url="https://example.com",
             success=False,
@@ -67,18 +72,12 @@ class TestScrapingEngine:
 
     @pytest.mark.asyncio
     async def test_engine_scrape_fallback_to_api(self, engine):
-        """Test that engine falls back to API when HTTP and browser fail."""
+        """Test that engine falls back to the API layer when HTTP fails."""
         http_failure = ScrapeResult(
             url="https://example.com",
             success=False,
             error="HTTP error",
             layer="http"
-        )
-        browser_failure = ScrapeResult(
-            url="https://example.com",
-            success=False,
-            error="Browser error",
-            layer="browser"
         )
         api_success = ScrapeResult(
             url="https://example.com",
@@ -89,11 +88,9 @@ class TestScrapingEngine:
         )
 
         with patch.object(engine.http, "scrape", new_callable=AsyncMock) as mock_http, \
-             patch.object(engine.browser, "scrape", new_callable=AsyncMock) as mock_browser, \
              patch.object(engine.api, "scrape", new_callable=AsyncMock) as mock_api, \
              patch("app.scraper.engine.get_random_delay", return_value=0):
             mock_http.return_value = http_failure
-            mock_browser.return_value = browser_failure
             mock_api.return_value = api_success
 
             result = await engine.scrape("https://example.com")
@@ -102,7 +99,6 @@ class TestScrapingEngine:
             assert result.text == "Content from API"
             assert result.layer == "api"
             mock_http.assert_called_once()
-            mock_browser.assert_called_once()
             mock_api.assert_called_once()
 
     @pytest.mark.asyncio
@@ -140,25 +136,25 @@ class TestScrapingEngine:
 
     @pytest.mark.asyncio
     async def test_engine_scrape_skip_http(self, engine):
-        """Test that engine skips HTTP layer when skip_http=True."""
-        browser_success = ScrapeResult(
+        """Test that engine skips the HTTP layer when skip_http=True."""
+        api_success = ScrapeResult(
             url="https://example.com",
             success=True,
-            text="Content from Browser",
-            layer="browser"
+            text="Content from API",
+            layer="api"
         )
 
         with patch.object(engine.http, "scrape", new_callable=AsyncMock) as mock_http, \
-             patch.object(engine.browser, "scrape", new_callable=AsyncMock) as mock_browser, \
+             patch.object(engine.api, "scrape", new_callable=AsyncMock) as mock_api, \
              patch("app.scraper.engine.get_random_delay", return_value=0):
-            mock_browser.return_value = browser_success
+            mock_api.return_value = api_success
 
             result = await engine.scrape("https://example.com", skip_http=True)
 
             assert result.success is True
-            assert result.layer == "browser"
+            assert result.layer == "api"
             mock_http.assert_not_called()
-            mock_browser.assert_called_once()
+            mock_api.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_engine_scrape_many(self, engine):
@@ -181,7 +177,7 @@ class TestScrapingEngine:
 
     @pytest.mark.asyncio
     async def test_engine_scrape_http_empty_text(self, engine):
-        """Test that engine falls back when HTTP returns empty text."""
+        """Test that engine falls back to API when HTTP returns empty text."""
         http_empty = ScrapeResult(
             url="https://example.com",
             success=True,
@@ -189,23 +185,23 @@ class TestScrapingEngine:
             html="<html></html>",
             layer="http"
         )
-        browser_success = ScrapeResult(
+        api_success = ScrapeResult(
             url="https://example.com",
             success=True,
-            text="Content from Browser",
+            text="Content from API",
             html="<html>Content</html>",
-            layer="browser"
+            layer="api"
         )
 
         with patch.object(engine.http, "scrape", new_callable=AsyncMock) as mock_http, \
-             patch.object(engine.browser, "scrape", new_callable=AsyncMock) as mock_browser, \
+             patch.object(engine.api, "scrape", new_callable=AsyncMock) as mock_api, \
              patch("app.scraper.engine.get_random_delay", return_value=0):
             mock_http.return_value = http_empty
-            mock_browser.return_value = browser_success
+            mock_api.return_value = api_success
 
             result = await engine.scrape("https://example.com")
 
             assert result.success is True
-            assert result.text == "Content from Browser"
-            assert result.layer == "browser"
-            mock_browser.assert_called_once()
+            assert result.text == "Content from API"
+            assert result.layer == "api"
+            mock_api.assert_called_once()
